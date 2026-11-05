@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>local.axella.actions</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>__AXELLA_DIR__/setup/axella-actions.py</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <!-- 077: every file and the socket the service creates is readable by this user only -->
+  <key>Umask</key><integer>63</integer>
+  <!-- logs can quote subjects and names: keep them in a private folder (700), never /tmp -->
+  <key>StandardOutPath</key><string>__LOG_DIR__/actions.log</string>
+  <key>StandardErrorPath</key><string>__LOG_DIR__/actions.log</string>
+</dict>
+</plist>

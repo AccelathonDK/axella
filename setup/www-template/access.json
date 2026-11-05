@@ -1,0 +1,6 @@
+{
+  "default": ["you@example.com"],
+  "paths": {
+    "/axella/": ["you@example.com"]
+  }
+}

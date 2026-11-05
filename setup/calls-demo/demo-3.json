@@ -1,0 +1,5 @@
+{"id": "call-demo-3", "demo": true, "started": "2026-10-27T16:05:00+01:00", "duration_s": 38,
+ "from": {"name": "", "number": "+45 70 00 00 03"}, "priority": "p3",
+ "summary": "Sales call about solar panels. Declined politely; no callback needed.",
+ "transcript": [{"who": "Caller", "text": "Hi, I'm calling about an offer on solar panels…"},
+                {"who": "Axella", "text": "Thanks, Alex isn't interested at the moment. Have a good day."}]}

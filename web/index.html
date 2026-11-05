@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!-- no remote images or scripts: a digest line can never load (and so leak to) an outside URL. The two
+     script hashes are the inline theme and splash scripts below – update them when those change. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'sha256-D+QqUlVDmXRguqqmgkZQg1Ith+dGP48Wde9J5y9sfnI=' 'sha256-b+pzcm2LrUUczeRZnu+F57RZe1qrCYSWOPeK5X1F5o8='; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self'; media-src 'self' blob:; worker-src 'self'; manifest-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Axella">
+<meta name="theme-color" content="#EEF1F2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#17181B" media="(prefers-color-scheme: dark)">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<title>Axella</title>
+<script>
+  // apply theme before paint (avoids a white flash in dark mode)
+  try { var t = localStorage.getItem('axella-theme') || 'auto';
+    var dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.classList.toggle('dark', dark); } catch (e) {}
+</script>
+</head>
+<body>
+<!-- launch splash (design system "Axella" Motion: rune draw, once per session). Plain HTML so it paints before the app loads; App.tsx dismisses it. -->
+<style>
+  #ax-splash{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:var(--ax-bg,#EEF1F2);transition:opacity 320ms cubic-bezier(.2,.8,.2,1)}
+  html.dark #ax-splash{background:var(--ax-bg,#17181B)}
+  #ax-splash.out{opacity:0;pointer-events:none}
+  #ax-splash .st{display:grid;justify-items:center;gap:22px}
+  #ax-splash .tile{position:relative;width:88px;height:88px}
+  #ax-splash .tile>b{position:absolute;inset:0;border-radius:22%;background:var(--ax-surface-inverse,#2B2B2E);display:grid;place-items:center;animation:axs-in 480ms cubic-bezier(.2,.8,.2,1) both}
+  #ax-splash .tile svg path{stroke:var(--ax-on-inverse,#fff);stroke-dasharray:1 2;stroke-dashoffset:1;animation:axs-draw 900ms cubic-bezier(.45,0,.55,1) 180ms forwards}
+  #ax-splash .rip{position:absolute;left:50%;top:50%;width:84px;height:84px;margin:-42px 0 0 -42px;border:1.5px solid var(--ax-ink,#2B2B2E);opacity:0;transform:rotate(45deg) scale(.6);animation:axs-rip 1600ms cubic-bezier(.45,0,.55,1) 700ms forwards}
+  #ax-splash .rip+.rip{animation-delay:1000ms}
+  #ax-splash .hz{width:120px;height:2px;background:var(--ax-ink,#2B2B2E);transform:scaleX(0);animation:axs-hz 900ms cubic-bezier(.45,0,.55,1) 600ms forwards}
+  #ax-splash .wm{font:600 15px/1 "Hanken Grotesk",ui-sans-serif,system-ui,-apple-system,sans-serif;letter-spacing:.32em;text-indent:.32em;color:var(--ax-ink,#2B2B2E);opacity:0;animation:axs-rise 480ms cubic-bezier(.2,.8,.2,1) 900ms forwards}
+  @keyframes axs-in{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:none}}
+  @keyframes axs-draw{to{stroke-dashoffset:0}}
+  @keyframes axs-rip{0%{opacity:.45;transform:rotate(45deg) scale(.6)}100%{opacity:0;transform:rotate(45deg) scale(1.7)}}
+  @keyframes axs-hz{to{transform:scaleX(1)}}
+  @keyframes axs-rise{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){#ax-splash *{animation:none!important;opacity:1!important;transform:none!important;stroke-dashoffset:0!important}#ax-splash .rip{display:none}}
+</style>
+<div id="ax-splash" aria-hidden="true"><div class="st">
+  <div class="tile"><i class="rip"></i><i class="rip"></i><b><svg viewBox="0 0 100 100" width="64" height="64"><path pathLength="1" d="M30 76L68 38L50 20L32 38L70 76" fill="none" stroke-width="8" stroke-linejoin="miter" stroke-miterlimit="10"/></svg></b></div>
+  <i class="hz"></i>
+  <span class="wm">AXELLA</span>
+</div></div>
+<script>
+  // once per session; the app calls __axSplashDone() when its first data is in (never before the draw has played)
+  (function () {
+    var el = document.getElementById('ax-splash'), t0 = Date.now(), done = false, seen = false
+    try { seen = sessionStorage.getItem('ax-splash') === '1'; sessionStorage.setItem('ax-splash', '1') } catch (e) {}
+    var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (seen) { el.remove(); window.__axSplashDone = function () {}; return }
+    function hide() { if (done) return; done = true; el.classList.add('out'); setTimeout(function () { el.remove() }, 360) }
+    window.__axSplashDone = function () { setTimeout(hide, Math.max(0, (reduce ? 300 : 1900) - (Date.now() - t0))) }
+    setTimeout(hide, 5000)   // never block the app if the Mac mini is slow
+  })()
+</script>
+<div id="root"></div>
+<script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

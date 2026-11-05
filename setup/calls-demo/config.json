@@ -1,0 +1,4 @@
+{"demo": true, "mode": "message", "mode_label": "taking messages",
+ "greeting_da": "Hej, du har ringet til Alex Example. Jeg er Axella, Alex’ AI-assistent – Alex kan ikke tage telefonen lige nu. Opkaldet bliver opsummeret til ham. Hvad drejer det sig om?",
+ "greeting_en": "Hi, you've reached Alex Example. I'm Axella, Alex's AI assistant – Alex can't take your call right now. This call is summarised for him. How can I help?",
+ "quiet_hours": "Weekdays 19:00–07:00, weekends", "retention_days": 30}

@@ -1,0 +1,10 @@
+{"id": "call-demo-1", "demo": true, "started": "2026-10-28T09:42:00+01:00", "duration_s": 96,
+ "from": {"name": "Anna Keller", "number": "+41 79 000 00 01", "tier": "VIP"}, "context": "Work",
+ "priority": "p1", "summary": "Wants to move Thursday's **product demo** from 14:30 to 15:30. Not urgent, but needs an answer today.",
+ "callback": {"by": "before 12:00"},
+ "sms_draft": "Hi Anna, 15:30 on Thursday works for me – please update the invite. br Alex",
+ "callback_event": {"calendar": "Calendar", "title": "Call Anna back", "start": "2026-10-28T11:00", "end": "2026-10-28T11:15"},
+ "transcript": [{"who": "Axella", "text": "Hi, you've reached Alex Example. I'm Axella, Alex's AI assistant…"},
+                {"who": "Caller", "text": "Hi, it's Anna. Can we move Thursday to half past three?"},
+                {"who": "Axella", "text": "I'll pass that on. Should Alex call you back?"},
+                {"who": "Caller", "text": "Yes please, before lunch if possible."}]}

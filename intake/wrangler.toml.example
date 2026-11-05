@@ -1,0 +1,27 @@
+# Copy to wrangler.toml and fill in the ids (wrangler d1 create axella-reports --jurisdiction eu; wrangler r2 bucket create axella-report-renders --jurisdiction eu)
+name = "axella-report-intake"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+routes = [{ pattern = "axella.dev/api/report*", zone_name = "axella.dev" }, { pattern = "axella.dev/api/triage*", zone_name = "axella.dev" },
+          { pattern = "axella.dev/r/*", zone_name = "axella.dev" }]
+
+# no request logs: they would hold IP addresses
+[observability]
+enabled = false
+
+[[d1_databases]]
+binding = "DB"
+database_name = "axella-reports"
+database_id = "<from wrangler d1 create>"
+
+[[r2_buckets]]                      # optional – without it renders are kept in D1
+binding = "RENDERS"
+bucket_name = "axella-report-renders"
+jurisdiction = "eu"
+
+[vars]
+GITHUB_REPO = "<owner>/axella"      # where approved reports become issues
+PUBLIC_BASE = "https://axella.dev"
+
+# secrets (wrangler secret put …): TRIAGE_TOKEN (also in state/report-triage-token on the maintainer's Mac mini),
+# GITHUB_TOKEN (fine-grained, this one repository, Issues: read and write – nothing else)

@@ -1,0 +1,8 @@
+{"id": "call-demo-2", "demo": true, "started": "2026-10-28T08:15:00+01:00", "duration_s": 74,
+ "from": {"name": "Holiday-home guest", "number": "+49 151 0000 0002"}, "context": "the holiday home",
+ "priority": "p0", "summary": "Guest arriving at the holiday home today can't open the key box – **the code doesn't work**. Standing outside the house.",
+ "callback": {"by": "as soon as possible"},
+ "sms_draft": "Hi, sorry about that – I'll call you in a few minutes. Alex",
+ "transcript": [{"who": "Caller", "text": "Hello, we are at the holiday house but the key box code is not working."},
+                {"who": "Axella", "text": "I'm sorry to hear that. I'll alert Alex straight away – can Alex reach you on this number?"},
+                {"who": "Caller", "text": "Yes, this number."}]}

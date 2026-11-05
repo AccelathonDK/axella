@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "generated": "2027-03-04T15:31:12+01:00",
+  "kind": "digest",
+  "title": "Afternoon digest",
+  "intro": "Nothing urgent. One reply ready for your approval, one task due today. 3 earlier items answered since 11:30.",
+  "spoken": "Nothing urgent. One thing to answer: Lee at Client B asks whether Thursday's review can move to Friday, and a reply is ready. Still open from this morning: the school asks for the signed trip form, due today. Acme is quiet. Calendar: one meeting at 16:00, and dinner with Jamie at 19:00. Nobody you're waiting on is overdue.",
+  "items": [
+    {
+      "id": "20270304-1530-p1-1",
+      "section": "p1",
+      "channel": "mail",
+      "account": "iCloud",
+      "context": "work",
+      "topic": "Client B review",
+      "headline": "Lee asks to move Thursday's review to Friday",
+      "detail": "Lee (Client B) can't make Thursday 10:00 and suggests Friday 10:00 or 13:00. Your Friday morning is free.",
+      "from": { "name": "Lee Chen", "address": "lee@clientb.example" },
+      "subject": "Review Thursday?",
+      "message_id": "example-0001@clientb.example",
+      "deep_link": "message://%3Cexample-0001@clientb.example%3E",
+      "draft": {
+        "mode": "reply",
+        "text": "Hi Lee,\n\nFriday 10:00 works for me – I'll move the invite.\n\nbr Alex"
+      },
+      "event": {
+        "calendar": "Work",
+        "title": "Review – Client B",
+        "start": "2027-03-06T10:00",
+        "end": "2027-03-06T11:00",
+        "location": "Video call"
+      },
+      "first_seen": "2027-03-04T15:31:12+01:00"
+    },
+    {
+      "id": "20270304-0730-p2-2",
+      "section": "p2",
+      "channel": "mail",
+      "account": "iCloud",
+      "context": "private",
+      "topic": "School trip",
+      "headline": "Overdue – the school needs the signed trip form today",
+      "detail": "Form for Robin's class trip on 12 March, attached as PDF. Sign and send back by end of day.",
+      "from": { "name": "School office", "address": "office@school.example" },
+      "subject": "Class trip 12 March – consent form",
+      "message_id": "example-0002@school.example",
+      "deep_link": "message://%3Cexample-0002@school.example%3E",
+      "carried": true,
+      "overdue": true,
+      "first_seen": "2027-03-04T07:31:40+01:00"
+    },
+    {
+      "id": "20270304-1530-p3-1",
+      "section": "p3",
+      "channel": "whatsapp",
+      "context": "private",
+      "topic": "Family",
+      "headline": "Family group: 12 new messages about Sunday lunch",
+      "detail": "Plan is 13:00 at Kim's. Nobody has asked you anything.",
+      "from": { "name": "Family", "address": "" },
+      "first_seen": "2027-03-04T15:31:12+01:00"
+    },
+    {
+      "id": "20270304-1530-wait-1",
+      "section": "wait",
+      "channel": "mail",
+      "account": "Exchange",
+      "context": "work",
+      "topic": "Acme onboarding",
+      "headline": "Waiting for Sam since Tuesday",
+      "detail": "You asked Sam for access to the new reporting tool. No reply yet – not overdue until tomorrow.",
+      "from": { "name": "Sam Rivera", "address": "sam.rivera@acme.example" },
+      "first_seen": "2027-03-04T15:31:12+01:00"
+    },
+    {
+      "id": "20270304-1530-cal-1",
+      "section": "cal",
+      "channel": "calendar",
+      "context": "private",
+      "topic": "Evening",
+      "headline": "Dinner with Jamie at 19:00",
+      "detail": "Your last meeting ends 16:45, so there is time in between.",
+      "in_calendar": true,
+      "first_seen": "2027-03-04T15:31:12+01:00"
+    },
+    {
+      "id": "20270304-1530-file-1",
+      "section": "file",
+      "channel": "mail",
+      "account": "iCloud",
+      "headline": "Receipt from an online shop",
+      "detail": "Order confirmation and receipt, 249.00 DKK.",
+      "from": { "name": "Example Shop", "address": "orders@shop.example" },
+      "subject": "Your receipt",
+      "message_id": "example-0003@shop.example",
+      "file_to": "Receipts",
+      "first_seen": "2027-03-04T15:31:12+01:00"
+    }
+  ]
+}

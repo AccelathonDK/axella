@@ -1,0 +1,186 @@
+/* fonts are bundled (src/main.tsx, @fontsource) – nothing is loaded from Google, and a mail's CSS can't reach it either */
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  /* Horizon tokens (design system "Axella") */
+  --color-bg: var(--ax-bg);
+  --color-bg-2: var(--ax-bg-2);
+  --color-surface: var(--ax-surface);
+  --color-surface-inverse: var(--ax-surface-inverse);
+  --color-on-inverse: var(--ax-on-inverse);
+  --color-ink: var(--ax-ink);
+  --color-ink-2: var(--ax-ink-2);
+  --color-ink-3: var(--ax-ink-3);
+  --color-line: var(--ax-line);
+  --color-line-strong: var(--ax-line-strong);
+  --color-fjord: var(--ax-accent);
+  --color-fjord-soft: var(--ax-accent-soft);
+  --color-on-fjord: var(--ax-on-accent);
+  --color-dawn: var(--ax-dawn);
+  --color-on-dawn: var(--ax-on-dawn);
+  --color-work: var(--ax-work);
+  --color-work-soft: var(--ax-work-soft);
+  --color-private: var(--ax-private);
+  --color-private-soft: var(--ax-private-soft);
+  --color-danger: var(--ax-danger);
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 6px;
+  --radius-2xl: 6px;
+  --font-sans: "Hanken Grotesk", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Horizon – Light ("Mist") */
+:root {
+  --ax-bg: #EEF1F2; --ax-bg-2: #E4E9EC; --ax-surface: #FFFFFF; --ax-surface-inverse: #2B2B2E; --ax-on-inverse: #FFFFFF;
+  --ax-ink: #2B2B2E; --ax-ink-2: #4A5866; --ax-ink-3: #5F6B77; --ax-line: #D3DADF; --ax-line-strong: #7A8691;
+  --ax-accent: #1F5C99; --ax-accent-soft: #DCE8F4; --ax-on-accent: #FFFFFF; --ax-dawn: #E9B44C; --ax-on-dawn: #2B2B2E;
+  --ax-work: #3A5878; --ax-work-soft: #DDE4EC; --ax-private: #A0466A; --ax-private-soft: #F2DFE6;
+  --ax-success: #256B4D; --ax-danger: #B23A3A; --ax-scrim: rgba(23,24,27,0.48);
+  --ax-project-1: #3D6FB6; --ax-project-2: #2A8A86; --ax-project-3: #5E8A3A; --ax-project-4: #B07D1A;
+  --ax-project-5: #B5603A; --ax-project-6: #B04A55; --ax-project-7: #6F5BB5; --ax-project-8: #66727E;
+  --ax-shadow-float: 0 1px 2px rgba(43,43,46,0.06), 0 12px 32px -12px rgba(43,43,46,0.22);
+  --ax-duration-instant: 120ms; --ax-duration-quick: 220ms; --ax-duration-calm: 480ms; --ax-duration-draw: 900ms;
+  --ax-ease-settle: cubic-bezier(0.2, 0.8, 0.2, 1); --ax-ease-steady: cubic-bezier(0.45, 0, 0.55, 1);
+
+  --radius: 6px;
+  --background: var(--ax-bg);
+  --foreground: var(--ax-ink);
+  --card: var(--ax-surface);
+  --card-foreground: var(--ax-ink);
+  --popover: var(--ax-surface);
+  --popover-foreground: var(--ax-ink);
+  --primary: var(--ax-accent);
+  --primary-foreground: var(--ax-on-accent);
+  --secondary: var(--ax-bg-2);
+  --secondary-foreground: var(--ax-ink);
+  --muted: var(--ax-bg-2);
+  --muted-foreground: var(--ax-ink-3);
+  --accent: var(--ax-bg-2);
+  --accent-foreground: var(--ax-ink);
+  --destructive: var(--ax-danger);
+  --success: var(--ax-success);
+  --border: var(--ax-line);
+  --input: var(--ax-line-strong);
+  --ring: var(--ax-accent);
+  --sidebar: var(--ax-bg);
+
+  /* section colours are gone in Horizon: buckets are neutral, accent when something waits, dawn only for urgent */
+  --ax-p0: var(--ax-dawn); --ax-p1: var(--ax-accent); --ax-p2: var(--ax-accent); --ax-p3: var(--ax-ink-3);
+  --ax-cal: var(--ax-accent); --ax-wait: var(--ax-accent); --ax-open: var(--ax-accent); --ax-tasks: var(--ax-accent); --ax-calls: var(--ax-accent);
+}
+
+/* Horizon – Dark ("Night") */
+.dark {
+  color-scheme: dark;
+  --ax-bg: #17181B; --ax-bg-2: #1E2024; --ax-surface: #25272C; --ax-surface-inverse: #EEF1F2; --ax-on-inverse: #17181B;
+  --ax-ink: #EEF1F2; --ax-ink-2: #B3BCC4; --ax-ink-3: #949EA8; --ax-line: #34383F; --ax-line-strong: #6B737E;
+  --ax-accent: #7FB2E5; --ax-accent-soft: #1E3348; --ax-on-accent: #17181B; --ax-dawn: #F0C064; --ax-on-dawn: #17181B;
+  --ax-work: #9DB8DA; --ax-work-soft: #24303F; --ax-private: #E3A0BC; --ax-private-soft: #3A2530;
+  --ax-success: #7FCFA8; --ax-danger: #F09A9A; --ax-scrim: rgba(0,0,0,0.6);
+  --ax-project-1: #8AB0E6; --ax-project-2: #6CCBC5; --ax-project-3: #A3CC7E; --ax-project-4: #E6B85C;
+  --ax-project-5: #EBA07F; --ax-project-6: #EE9AA2; --ax-project-7: #B4A6EC; --ax-project-8: #A6B0BA;
+  --ax-shadow-float: 0 1px 2px rgba(0,0,0,0.4), 0 16px 40px -16px rgba(0,0,0,0.7);
+}
+
+@layer base {
+  * { @apply border-border; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { @apply bg-background text-foreground antialiased; font-family: var(--font-sans); font-feature-settings: "tnum" 0; }
+  :focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
+  body, .ax-themed { transition: background-color var(--ax-duration-quick), color var(--ax-duration-quick), border-color var(--ax-duration-quick); }
+  button:not(:disabled), [role="button"], [role="menuitem"] { cursor: pointer; }
+}
+
+/* section tint helpers – every section sets --c */
+.tint-head { background: color-mix(in srgb, var(--c) 13%, var(--card)); border-bottom: 1px solid color-mix(in srgb, var(--c) 28%, transparent); }
+.tint-soft { background: color-mix(in srgb, var(--c) 14%, transparent); color: var(--c); }
+.tint-chip { border-color: color-mix(in srgb, var(--c) 35%, transparent); background: color-mix(in srgb, var(--c) 9%, var(--card)); }
+.bg-c { background: var(--c); }
+.text-c { color: var(--c); }
+.md-inline a { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
+.md-inline code { font-size: .82em; word-break: break-all; background: var(--muted); padding: 0 .25em; border-radius: 4px; }
+.pt-safe { padding-top: env(safe-area-inset-top); }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+.scroll-mt-sec { scroll-margin-top: calc(var(--top-h, 104px) + 8px); }
+
+/* slide-in menu */
+@keyframes sheet-in { from { transform: translateX(-100%) } to { transform: none } }
+@keyframes sheet-out { from { transform: none } to { transform: translateX(-100%) } }
+@keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }
+@keyframes fade-out { from { opacity: 1 } to { opacity: 0 } }
+[data-sheet][data-state=open] { animation: sheet-in .22s cubic-bezier(.2,.8,.2,1) }
+[data-sheet][data-state=closed] { animation: sheet-out .18s ease-in }
+[data-sheet-overlay][data-state=open] { animation: fade-in .22s }
+[data-sheet-overlay][data-state=closed] { animation: fade-out .18s }
+@media (prefers-reduced-motion: reduce) { [data-sheet], [data-sheet-overlay] { animation: none !important } }
+
+/* Horizon helpers */
+.font-mono, .tabular-nums { font-variant-numeric: tabular-nums; }
+.ax-label { font: 500 12px/1.4 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ax-ink-3); }
+.ax-diamond { display: inline-block; width: 8px; height: 8px; transform: rotate(45deg); background: currentColor; flex: none; }
+.shadow-float { box-shadow: var(--ax-shadow-float); }
+@keyframes ax-rise { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
+.ax-reveal { animation: ax-rise var(--ax-duration-calm) var(--ax-ease-settle) both; }
+@keyframes ax-listen { 0% { transform: rotate(45deg) scale(.6); opacity: .7 } 100% { transform: rotate(45deg) scale(1.6); opacity: 0 } }
+@media (prefers-reduced-motion: reduce) { .ax-reveal { animation: none } }
+/* Approve: the diamond frame draws, then the tick */
+@keyframes ax-draw { to { stroke-dashoffset: 0 } }
+.ax-draw { stroke-dasharray: 1; stroke-dashoffset: 1; animation: ax-draw 520ms var(--ax-ease-steady) forwards; }
+.ax-draw-late { animation-delay: 420ms; }
+.ax-draw-slow { animation-duration: var(--ax-duration-draw, 900ms); animation-delay: 240ms; }
+@media (prefers-reduced-motion: reduce) { .ax-draw { animation: none; stroke-dashoffset: 0 } }
+/* item sheet: slides in from the right on the laptop, rises on the phone */
+@keyframes ax-sheet-r { from { transform: translateX(32px); opacity: 0 } to { transform: none; opacity: 1 } }
+.ax-sheet[data-state=open] { animation: ax-rise 240ms cubic-bezier(.2,.8,.2,1) }
+@media (min-width: 640px) { .ax-sheet[data-state=open] { animation-name: ax-sheet-r } }
+@media (prefers-reduced-motion: reduce) { .ax-sheet[data-state=open] { animation: none } }
+.ax-sheet .max-\[420px\]\:hidden { display: inline !important }
+/* native selects: chevron drawn in ink-3 for each theme (a data URL can't read CSS variables) */
+.ax-select { background-repeat: no-repeat; background-position: right .75rem center; background-size: 16px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235F6B77' stroke-width='1.8'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") }
+.dark .ax-select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23949EA8' stroke-width='1.8'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") }
+.ax-select.h-7 { padding-left: .5rem; padding-right: 1.75rem; background-position: right .4rem center; background-size: 14px }
+/* Add as task: while Claude reads the mail – a running bar on the dialog and shimmering lines where the details will go */
+@keyframes ax-indeterminate { from { transform: translateX(-100%) } to { transform: translateX(300%) } }
+.ax-indeterminate { animation: ax-indeterminate 1.3s ease-in-out infinite }
+@keyframes ax-shimmer { from { background-position: 200% 0 } to { background-position: -200% 0 } }
+.ax-shimmer { background: linear-gradient(90deg, var(--ax-bg-2) 25%, var(--ax-line-strong) 50%, var(--ax-bg-2) 75%); background-size: 200% 100%; animation: ax-shimmer 1.6s linear infinite }
+@media (prefers-reduced-motion: reduce) { .ax-indeterminate { animation: none; width: 100% } .ax-shimmer { animation: none } }
+/* toasts stay tappable while a sheet or dialog is open (Radix sets pointer-events: none on the page around it) */
+[data-sonner-toaster], [data-sonner-toaster] [data-sonner-toast] { pointer-events: auto }
+
+/* Meeting prep: Print / Save as PDF prints the Document view only */
+@media print {
+  body * { visibility: hidden; }
+  [data-print-doc], [data-print-doc] * { visibility: visible; }
+  [data-print-doc] { position: absolute; inset: 0 auto auto 0; width: 100%; max-width: none; background: #fff; color: #111; }
+}
+
+/* week wrap: the row a wrap line points to flashes once (Reduce Motion: no animation, just the outline) */
+.ax-flash { outline: 2px solid var(--ax-accent); outline-offset: -2px; transition: outline-color 1.2s ease; }
+@media (prefers-reduced-motion: reduce) { .ax-flash { transition: none; } }

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- setup/watchdog.py as a LaunchDaemon, running as you: every minute it checks your login session and the action
+     service, writes state/watchdog.json (the dashboard's "paused" banner) and sends one Web Push when Axella pauses and
+     one when it is back. Needs no login session. Install: docs/SETUP.md "Keep it running when other users log in". -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>__LABEL__</string>
+  <key>UserName</key><string>__USER__</string>
+  <key>GroupName</key><string>staff</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/bin/python3</string>
+    <string>__AXELLA_DIR__/setup/watchdog.py</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict><key>HOME</key><string>__HOME__</string></dict>
+  <key>WorkingDirectory</key><string>__AXELLA_DIR__</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>Umask</key><integer>63</integer>
+  <key>StandardOutPath</key><string>__LOG_DIR__/watchdog.log</string>
+  <key>StandardErrorPath</key><string>__LOG_DIR__/watchdog.log</string>
+</dict>
+</plist>

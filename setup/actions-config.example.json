@@ -1,0 +1,157 @@
+{
+  "_comment": "Copy to setup/actions-config.json and make it yours (not in git). Private-only: drop the work account, keep \"workplaces\": []. Several employers/clients: one entry per workplace, each with its own mail account and/or domains.",
+  "owner": {
+    "name": "Alex Example",
+    "first_name": "Alex",
+    "sign_off": "br Alex",
+    "_logins": "Tailscale logins that may add, edit and delete contacts and calendar events from the dashboard. Leave out: the first login on the access list.",
+    "logins": [
+      "you@example.com"
+    ]
+  },
+  "accounts": {
+    "iCloud": {
+      "label": "iCloud",
+      "kind": "private",
+      "address": "you@icloud.com",
+      "folders": [
+        "@Action",
+        "@Waiting",
+        "Notifications",
+        "Archive",
+        "Receipts",
+        "Accounts",
+        "Bookings",
+        "Family",
+        "Side project"
+      ]
+    },
+    "Exchange": {
+      "label": "Acme",
+      "kind": "work",
+      "workplace": "acme",
+      "address": "you@acme.example",
+      "folders": [
+        "@Action",
+        "@Waiting",
+        "Notifications",
+        "Archive",
+        "Accounts",
+        "Product A"
+      ]
+    }
+  },
+  "workplaces": [
+    {
+      "id": "acme",
+      "name": "Acme",
+      "domains": [
+        "acme.example"
+      ],
+      "calendar": "Calendar",
+      "protected": true
+    },
+    {
+      "id": "client-b",
+      "name": "Client B",
+      "domains": [
+        "clientb.example"
+      ],
+      "calendar": null,
+      "protected": false
+    }
+  ],
+  "calendars": [
+    {
+      "name": "Home",
+      "label": "Home (iCloud)",
+      "kind": "private"
+    },
+    {
+      "name": "Work",
+      "label": "Work (iCloud)",
+      "kind": "work"
+    },
+    {
+      "name": "Calendar",
+      "label": "Acme",
+      "kind": "work",
+      "workplace": "acme"
+    }
+  ],
+  "document_folders": [
+    [
+      "iCloud",
+      "Receipts"
+    ]
+  ],
+  "mail_providers_comment": "Optional. The scam check trusts a sender check that says \"pass\" only when one of these mail providers wrote it (its Authentication-Results above its own Received lines). Default: iCloud, Gmail and Outlook.",
+  "mail_providers": [
+    "icloud.com",
+    "me.com",
+    "mac.com",
+    "apple.com",
+    "google.com",
+    "gmail.com",
+    "googlemail.com",
+    "outlook.com",
+    "office365.com",
+    "microsoft.com",
+    "hotmail.com"
+  ],
+  "newsletter_folders": [
+    [
+      "iCloud",
+      "INBOX"
+    ],
+    [
+      "iCloud",
+      "Notifications"
+    ],
+    [
+      "iCloud",
+      "Archive"
+    ],
+    [
+      "Exchange",
+      "Inbox"
+    ],
+    [
+      "Exchange",
+      "Notifications"
+    ],
+    [
+      "Exchange",
+      "Archive"
+    ]
+  ],
+  "push_contact": "mailto:you@example.com",
+  "voice": {
+    "url": "https://your-call-agent.vercel.app",
+    "number": "+45 00 00 00 00"
+  },
+  "self": {
+    "names": [
+      "Alex Example"
+    ],
+    "addresses": [
+      "you@icloud.com",
+      "you@acme.example",
+      "+4500000000"
+    ]
+  },
+  "reply_debt": {
+    "_comment": "Who you owe a reply (To do / Today): work after work_days working days, private after private_days days; older than max_days drops off.",
+    "work_days": 3,
+    "private_days": 5,
+    "max_days": 21
+  },
+  "meetings": {
+    "_comment": "Meeting prep: recordings are transcribed on this Mac mini with whisper.cpp (tools/setup-whisper.sh installs it). All three are optional – without them Axella looks in the usual places (/opt/homebrew/bin/whisper-cli, ~/.cache/whisper/ggml-*.bin).",
+    "whisper_bin": "/opt/homebrew/bin/whisper-cli",
+    "whisper_model": "~/.cache/whisper/ggml-large-v3-turbo.bin",
+    "_language": "auto (detect per recording), da or en",
+    "language": "auto"
+  },
+  "_dashboard_url": "Optional: your dashboard address, e.g. https://<mac>.<tailnet>.ts.net/axella – Trips puts a link back to the trip in the calendar events it adds."
+}

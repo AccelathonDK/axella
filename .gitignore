@@ -1,0 +1,50 @@
+# --- personal data: never commit ---
+digests/
+state/
+calls/*
+!calls/.gitkeep
+contacts.md
+contacts-cleanup/
+AXELLA.md
+setup/actions-config.json
+HANDOVER.md
+# review / user-test notes (contain real data)
+/user-test-*.md
+/USER-TEST-FIXES*.md
+/PUBLIC-RELEASE-FIXES*.md
+/SECURITY-REVIEW*.md
+knowledge/
+
+# --- build output (made by `npm run deploy` in web/) ---
+/assets/
+/index.html
+/sw.js
+/manifest.webmanifest
+/icons/
+web/dist/
+web/node_modules/
+web/*.tsbuildinfo
+
+# --- misc ---
+.DS_Store
+__pycache__/
+*.pyc
+*.tgz
+.env
+
+# Report a problem: saved reports (may hold a real screenshot in developer mode)
+reports/
+intake/wrangler.toml
+intake/node_modules/
+intake/.wrangler/
+
+# axella.dev form entries pulled by setup/feedback_pull.py: strangers' messages and e-mail addresses
+feedback/
+
+# --- local lists with real values (tools/pii-check.py) – never commit ---
+tools/public-release/blocklist.local.txt
+tools/public-release/pii-allow.local.txt
+
+# Axella backups (encrypted, but personal) and the data a restore moved aside
+*.axbak
+/pre-restore-*/

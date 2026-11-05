@@ -1,0 +1,127 @@
+/* Axella's icon archive (design system "Axella", 61 icons: one 1.75 stroke on a 24 grid, 0°/90°/45° only, mitred joins,
+   flat ends; fill only where fill is the meaning). Exported under the names the app already used (lucide's), so screens
+   keep their imports; the few icons the archive has no counterpart for come from lucide, drawn with the same stroke. */
+import * as React from 'react'
+import * as L from 'lucide-react'
+
+type P = { className?: string; style?: React.CSSProperties; strokeWidth?: number; 'aria-label'?: string }
+export type LucideIcon = React.ComponentType<P>
+type Spec = [string, Record<string, string | number>][]
+export const AX_ICONS: Record<string, Spec> = {"focus":[["path",{"d":"M12 2.5L21.5 12 12 21.5 2.5 12z"}],["path",{"d":"M12 2.5L21.5 12 12 21.5z","fill":1}]],"calm":[["path",{"d":"M2 11l4-4 4 4 4-4 4 4 4-4"}],["path",{"d":"M2 16.5h20"}]],"rhythm":[["path",{"d":"M12 2.5L21.5 12 12 21.5 2.5 12z"}],["path",{"d":"M12 12V7M12 12h4"}]],"one-place":[["path",{"d":"M12 2.5L21.5 12 12 21.5 2.5 12z"}],["path",{"d":"M12 8.5l3.5 3.5-3.5 3.5L8.5 12z","fill":1}]],"approve":[["path",{"d":"M12 2.5L21.5 12 12 21.5 2.5 12z"}],["path",{"d":"M8.5 12l2.5 2.5 4.5-4.5"}]],"hold":[["path",{"d":"M12 2.5L21.5 12 12 21.5 2.5 12z"}],["path",{"d":"M1 12h22"}]],"urgent":[["path",{"d":"M12 2.5L21.5 12 12 21.5 2.5 12z"}],["path",{"d":"M12 6.5v6.5"}],["path",{"d":"M12 15.25l1.25 1.25L12 17.75l-1.25-1.25z","fill":1}]],"quiet":[["path",{"d":"M6 16v-6l6-6 6 6v6M4 16h16M10 19.5h4"}],["path",{"d":"M3 3l18 18"}]],"private-by-design":[["path",{"d":"M5 11h14v10H5z"}],["path",{"d":"M8 11V7l4-4 4 4v4"}]],"accelerate":[["path",{"d":"M5 6l6 6-6 6"}],["path",{"d":"M12 6l6 6-6 6"}]],"work":[["path",{"d":"M3 8h18v12H3z"}],["path",{"d":"M9 8V5h6v3M3 13h18"}]],"private":[["path",{"d":"M4 21V11l8-8 8 8v10z"}],["path",{"d":"M10 21v-5h4v5"}]],"mail":[["path",{"d":"M3 5h18v14H3z"}],["path",{"d":"M3 5l9 9 9-9"}]],"message":[["path",{"d":"M3 4h18v12h-9l-5 5v-5H3z"}]],"chat":[["path",{"d":"M8 8V4h13v10h-3"}],["path",{"d":"M3 8h12v9H9l-3 3v-3H3z"}]],"calendar":[["path",{"d":"M3 5h18v16H3z"}],["path",{"d":"M3 10h18M8 3v4M16 3v4"}],["path",{"d":"M12 13l2.5 2.5L12 18l-2.5-2.5z","fill":1}]],"person":[["path",{"d":"M12 3l3.5 3.5L12 10 8.5 6.5z"}],["path",{"d":"M4 21v-3l4-4h8l4 4v3"}]],"morning":[["path",{"d":"M2 17h20"}],["path",{"d":"M7 17l5-5 5 5"}],["path",{"d":"M12 4v4M4.5 9.5l2 2M19.5 9.5l-2 2"}]],"midday":[["path",{"d":"M2 19h20"}],["path",{"d":"M12 5l5 5-5 5-5-5z"}]],"evening":[["path",{"d":"M2 12h20"}],["path",{"d":"M7 12l5 5 5-5"}],["path",{"d":"M17 4.5l1 1-1 1-1-1z","fill":1}]],"voice":[["path",{"d":"M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"}]],"summary":[["path",{"d":"M4 6h16M4 12h11M4 18h6"}]],"draft":[["path",{"d":"M4 20l1-4L16 5l3 3L8 19z"}],["path",{"d":"M14 7l3 3"}]],"discard":[["path",{"d":"M4 7h16M9 7V4h6v3"}],["path",{"d":"M6 7l1 14h10l1-14"}]],"archive":[["path",{"d":"M3 4h18v5H3z"}],["path",{"d":"M5 9v11h14V9M10 13h4"}]],"search":[["path",{"d":"M10.5 3.5l7 7-7 7-7-7z"}],["path",{"d":"M15.5 15.5l5 5"}]],"rules":[["path",{"d":"M3 4h18l-7 7v8l-4 2V11z"}]],"settings":[["path",{"d":"M3 7h18M3 17h18"}],["path",{"d":"M9 4.5l2.5 2.5L9 9.5 6.5 7z","fill":1}],["path",{"d":"M15 14.5l2.5 2.5-2.5 2.5-2.5-2.5z","fill":1}]],"play":[["path",{"d":"M8 4l8 8-8 8z"}]],"pause":[["path",{"d":"M9 5v14M15 5v14"}]],"home-server":[["path",{"d":"M4 3h16v8H4zM4 13h16v8H4z"}],["path",{"d":"M8 6l1 1-1 1-1-1z","fill":1}],["path",{"d":"M8 16l1 1-1 1-1-1z","fill":1}]],"connector":[["path",{"d":"M8 7l5 5-5 5-5-5z"}],["path",{"d":"M16 7l5 5-5 5-5-5z"}]],"check":[["path",{"d":"M4.5 12l4.5 4.5L19 6.5"}]],"close":[["path",{"d":"M6 6l12 12M18 6L6 18"}]],"add":[["path",{"d":"M12 4v16M4 12h16"}]],"arrow-right":[["path",{"d":"M4 12h15M13 6l6 6-6 6"}]],"chevron-down":[["path",{"d":"M6 9l6 6 6-6"}]],"info":[["path",{"d":"M12 2.5L21.5 12 12 21.5 2.5 12z"}],["path",{"d":"M12 11v6"}],["path",{"d":"M12 6.5l1.25 1.25L12 9l-1.25-1.25z","fill":1}]],"rune":[["path",{"d":"M5.5 20L17.5 8 12 2.5 6.5 8l12 12"}]],"today":[["path",{"d":"M3 5h18v16H3z"}],["path",{"d":"M3 5h18v5H3z","fill":1}],["path",{"d":"M8 3v4M16 3v4"}]],"listen":[["path",{"d":"M4 14v-2l4-4h8l4 4v2"}],["path",{"d":"M3 14h5v6H3zM16 14h5v6h-5z"}]],"phone":[["path",{"d":"M3 3h6l2 5-3 3 5 5 3-3 5 2v6h-5L3 9z"}]],"todo":[["path",{"d":"M3.5 6l1.5 1.5L8 4.5M3.5 12l1.5 1.5L8 10.5M11 6.5h9M11 12.5h9M11 18.5h9"}],["path",{"d":"M5.5 16.5l2 2-2 2-2-2z"}]],"waiting":[["path",{"d":"M6 3h12l-6 6v6l6 6H6l6-6V9z"}]],"filing":[["path",{"d":"M3 5h7l2 2h9v13H3z"}],["path",{"d":"M8 13.5h8M13 10.5l3 3-3 3"}]],"receipt":[["path",{"d":"M5 21V3h14v18l-2-2-2 2-2-2-2 2-2-2-2 2-2-2z"}],["path",{"d":"M9 8h6M9 12h6"}]],"newsletter":[["path",{"d":"M3 4h18v16H3z"}],["path",{"d":"M7 8h10M7 12h4M7 16h4M13 12h4v4h-4z"}]],"insights":[["path",{"d":"M4 20h16M7 17v-5M12 17V6M17 17V9"}]],"runs":[["path",{"d":"M2 12h4l3-3 6 6 3-3h4"}]],"sweep":[["path",{"d":"M12 2.5L21.5 12 12 21.5 2.5 12z"}],["path",{"d":"M12 7.5l4.5 4.5-4.5 4.5L7.5 12z"}],["path",{"d":"M12 12l5-5"}]],"project":[["path",{"d":"M3 5h7l2 2h9v13H3z"}]],"suggested":[["path",{"d":"M10 6l6 6-6 6-6-6z"}],["path",{"d":"M18.5 2.5l1.5 1.5-1.5 1.5L17 4z","fill":1}],["path",{"d":"M19 16l1.25 1.25L19 18.5l-1.25-1.25z","fill":1}]],"refresh":[["path",{"d":"M20 12l-8 8-8-8 8-8 4 4"}],["path",{"d":"M16.5 3.5v5h-5"}]],"theme":[["path",{"d":"M4 4h16v16H4z"}],["path",{"d":"M4 20L20 4v16z","fill":1}]],"notify":[["path",{"d":"M6 16v-6l6-6 6 6v6M4 16h16M10 19.5h4"}]],"account":[["path",{"d":"M3 3h18v18H3z"}],["path",{"d":"M12 6l3 3-3 3-3-3z"}],["path",{"d":"M6 21v-2l3-3h6l3 3v2"}]],"more":[["path",{"d":"M5 10l2 2-2 2-2-2z","fill":1}],["path",{"d":"M12 10l2 2-2 2-2-2z","fill":1}],["path",{"d":"M19 10l2 2-2 2-2-2z","fill":1}]],"still-open":[["path",{"d":"M4 9h15l-3-3M20 15H5l3 3"}]],"chevron-right":[["path",{"d":"M9 6l6 6-6 6"}]],"briefing":[["path",{"d":"M5 3h10l4 4v14H5z"}],["path",{"d":"M15 3v4h4M8 11h8M8 15h4"}],["path",{"d":"M15.5 14l1.5 1.5-1.5 1.5-1.5-1.5z","fill":1}]],"report":[["path",{"d":"M5 21V3.5h13l-3.5 3.5 3.5 3.5H5"}],["path",{"d":"M9 7h2"}]],"trip":[["path",{"d":"M5 15.5l2.5 2.5L5 20.5 2.5 18z"}],["path",{"d":"M19 3.5l2.5 2.5L19 8.5 16.5 6z","fill":1}],["path",{"d":"M7.5 18H12V6h4.5"}]],"meeting":[["path",{"d":"M7 3.5l2.5 2.5L7 8.5 4.5 6zM17 3.5l2.5 2.5L17 8.5 14.5 6z"}],["path",{"d":"M2.5 15v-2l2.5-2.5h4l2.5 2.5v2M12.5 15v-2l2.5-2.5h4l2.5 2.5v2"}],["path",{"d":"M1.5 15h21M5 15v6M19 15v6"}]]}
+
+export function AxIcon({ name, size, className, style, strokeWidth, ...rest }: P & { name: string; size?: number }) {
+  const spec = AX_ICONS[name] || AX_ICONS['one-place']
+  return <svg viewBox="0 0 24 24" width={size || 24} height={size || 24} fill="none" stroke="currentColor"
+    strokeWidth={strokeWidth || (size && size <= 16 ? 2 : 1.75)} strokeLinecap="butt" strokeLinejoin="miter" strokeMiterlimit={10}
+    className={className} style={style} aria-hidden={rest['aria-label'] ? undefined : true} role={rest['aria-label'] ? 'img' : undefined} {...rest}>
+    {spec.map(([tag, a], i) => React.createElement(tag, { key: i, ...a, ...(a.fill ? { fill: 'currentColor', stroke: 'none' } : {}) }))}
+  </svg>
+}
+const ax = (name: string): LucideIcon => { const C = (p: P) => <AxIcon name={name} {...p} />; C.displayName = 'Ax(' + name + ')'; return C }
+const lu = (I: L.LucideIcon): LucideIcon => { const C = (p: P) => <I strokeWidth={1.75} strokeLinecap="butt" strokeLinejoin="miter" {...p} />; return C }
+
+export const Activity = ax('runs')
+export const Briefing = ax('briefing')
+export const Lock = ax('private-by-design')
+export const AlarmClock = ax('rhythm')
+export const AlertOctagon = ax('urgent')
+export const AlertTriangle = ax('urgent')
+export const Archive = ax('archive')
+export const ArchiveRestore = ax('archive')
+export const BarChart3 = ax('insights')
+export const Bell = ax('notify')
+export const BellOff = ax('quiet')
+export const BellRing = ax('notify')
+export const Briefcase = ax('work')
+export const Calendar = ax('calendar')
+export const Trip = ax('trip')                      // from here to there – Trips
+export const Meeting = ax('meeting')                // two people at a table – Meetings, meeting prep (not the calendar)
+export const CalendarCheck = ax('calendar')
+export const CalendarClock = ax('rhythm')
+export const CalendarDays = ax('calendar')
+export const CalendarOff = ax('calendar')
+export const CalendarPlus = ax('calendar')
+export const Check = ax('check')
+export const CheckCheck = ax('approve')
+export const ChevronDown = ax('chevron-down')
+export const ChevronRight = ax('chevron-right')
+export const CircleCheck = ax('approve')
+export const Clock = ax('rhythm')
+export const FileText = ax('summary')
+export const Folder = ax('filing')
+export const FolderInput = ax('filing')
+export const FolderKanban = ax('project')
+export const Forward = ax('arrow-right')
+export const Headphones = ax('listen')
+export const Home = ax('private')
+export const Hourglass = ax('waiting')
+export const Inbox = ax('today')
+export const Info = ax('info')
+export const Linkedin = ax('person')
+export const ListTodo = ax('todo')
+export const Mail = ax('mail')
+export const MailPlus = ax('draft')
+export const MessageCircle = ax('message')
+export const Moon = ax('theme')
+export const MoreHorizontal = ax('more')
+export const Newspaper = ax('newsletter')
+export const Palmtree = ax('calm')
+export const Pause = ax('pause')
+export const Pencil = ax('draft')
+export const PencilLine = ax('draft')
+export const Phone = ax('phone')
+export const PhoneIncoming = ax('phone')
+export const Plane = ax('hold')
+export const Play = ax('play')
+export const Plug = ax('connector')
+export const Plus = ax('add')
+export const Radar = ax('sweep')
+export const Receipt = ax('receipt')
+export const Repeat = ax('refresh')
+export const RotateCcw = ax('refresh')
+export const RotateCw = ax('refresh')
+export const Search = ax('search')
+export const Settings = ax('settings')
+export const ShieldCheck = ax('private-by-design')
+export const Slack = ax('chat')
+export const SlidersHorizontal = ax('rules')
+export const Sparkles = ax('suggested')
+export const SquarePlus = ax('add')
+export const StickyNote = ax('summary')
+export const Sun = ax('theme')
+export const SunMoon = ax('theme')
+export const Recurring = ax('still-open')
+export const ThemeLight = ax('midday')
+export const ThemeDark = ax('evening')
+export const Sunrise = ax('morning')
+export const Trash2 = ax('discard')
+export const UserCircle = ax('account')
+export const Wand2 = ax('suggested')
+export const X = ax('close')
+export const Zap = ax('accelerate')
+export const ArrowDownRight = lu(L.ArrowDownRight)
+export const ArrowUpRight = lu(L.ArrowUpRight)
+export const ClipboardCopy = lu(L.ClipboardCopy)
+export const Copy = lu(L.Copy)
+export const Dot = lu(L.Dot)
+export const ExternalLink = lu(L.ExternalLink)
+export const Eye = lu(L.Eye)
+export const EyeOff = lu(L.EyeOff)
+export const Hash = lu(L.Hash)
+export const Image = lu(L.Image)
+export const Link2 = lu(L.Link2)
+export const Loader2 = lu(L.Loader2)
+export const Menu = lu(L.Menu)
+export const Minus = lu(L.Minus)
+export const MousePointerClick = lu(L.MousePointerClick)
+export const Paperclip = lu(L.Paperclip)
+export const Reply = lu(L.Reply)
+export const Save = lu(L.Save)
+export const Square = lu(L.Square)
+export const Star = lu(L.Star)
+export const Tag = lu(L.Tag)
+export const Undo2 = lu(L.Undo2)
+export const Upload = lu(L.Upload)
+export const Keyboard = lu(L.Keyboard)
+/** An icon from the archive by its own name, as a component (for tables like sections and nav). */
+export const axi = (name: string): LucideIcon => ax(name)
