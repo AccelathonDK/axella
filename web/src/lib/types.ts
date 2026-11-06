@@ -88,6 +88,8 @@ export interface ScheduleInfo {
   status: { digests: boolean; urgent: boolean; reason: string | null; vacation_until: string | null; work_paused?: boolean }
   sweep: { at: string; by: string; fired_at: string | null } | null
   wait: string
+  /** the next digest that will really run (scheduler.next_digest) – the line at the top of Today; null = none scheduled */
+  next?: { at: string; label: string; worlds: ('work' | 'private')[] } | null
 }
 export interface Doc {
   message_id: string; account?: string; mailbox?: string; date?: string | null; vendor: string; vendor_key: string

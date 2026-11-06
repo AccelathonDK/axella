@@ -6117,8 +6117,13 @@ class Handler(BaseHTTPRequestHandler):
             except (RunnerBad, ValueError) as e:
                 return self._send(400, {'ok': False, 'error': str(e)})
         if a == 'schedule':
+            try:
+                nxt = RUNNER.next_digest()                # the line at the top of Today: "next digest 15:30, in 4 h"
+            except Exception as e:
+                sys.stderr.write('%s next digest: %s\n' % (now_iso(), str(e)[:200]))
+                nxt = None
             return self._send(200, {'ok': True, 'schedule': SCHED.load(), 'status': SCHED.status(),
-                                    'sweep': SCHED.sweep(), 'wait': SCHED.wait_text(general=True)})
+                                    'sweep': SCHED.sweep(), 'wait': SCHED.wait_text(general=True), 'next': nxt})
         if a == 'attachment':
             from urllib.parse import parse_qs, urlparse, quote
             q = parse_qs(urlparse(self.path).query)

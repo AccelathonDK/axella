@@ -205,6 +205,32 @@ function Tile({ label, n, sub, onClick }: { label: string; n: number; sub?: stri
   </button>
 }
 
+/* ---------- when the next digest comes (scheduler.next_digest via GET schedule): "next digest 15:30, in 4 h" ---------- */
+export function nextDigestText(next: { at: string; worlds: string[] } | null | undefined, status: { digests: boolean; urgent: boolean } | undefined, now = new Date()) {
+  if (next === undefined) return null
+  const paused = status && !status.digests ? 'paused – ' : ''
+  const tail = paused && status?.urgent ? ' · urgent still checked' : ''
+  if (!next) return paused + 'no digests scheduled' + tail
+  const at = new Date(next.at)
+  const name = next.worlds.length === 1 ? `next ${next.worlds[0]} digest` : 'next digest'
+  const hhmm = at.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+  const min = Math.max(1, Math.round((at.getTime() - now.getTime()) / 60000))
+  const day0 = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const days = Math.round((new Date(at.getFullYear(), at.getMonth(), at.getDate()).getTime() - day0) / 864e5)
+  const when = min < 60 ? `in ${min} min` : days === 0 ? `${hhmm}, in ${Math.round(min / 60)} h` : days === 1 ? `tomorrow ${hhmm}`
+    : `${at.toLocaleDateString('en-GB', { weekday: 'short' })} ${hhmm}, in ${days} days`
+  return `${paused}${name} ${when}${tail}`
+}
+function NextDigest() {
+  const { ax, go } = useApp()
+  const [, tick] = useState(0)
+  useEffect(() => { const t = setInterval(() => tick(n => n + 1), 60000); return () => clearInterval(t) }, [])
+  const text = ax.schedule ? nextDigestText(ax.schedule.next, ax.schedule.status) : null
+  if (!text) return null
+  return <> · <button type="button" onClick={() => go({ kind: 'settings', page: 'schedule' })} data-next-digest=""
+    className="hover:text-ink uppercase underline-offset-2 hover:underline" title="Settings → Schedule">{text}</button></>
+}
+
 /* ---------- the Today page ---------- */
 export function NowView() {
   const { ax } = useApp()
@@ -218,7 +244,7 @@ export function NowView() {
   return <div className="space-y-4">
     <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
       <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.02em]">{count ? `${count} thing${count > 1 ? 's' : ''} need${count > 1 ? '' : 's'} you` : 'Nothing needs you'}</h1>
-      <span className="text-ink-3 font-mono text-[13px] uppercase">{d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} · {hm(d.toISOString())}</span>
+      <span className="text-ink-3 font-mono text-[13px] uppercase">{d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} · {hm(d.toISOString())}<NextDigest /></span>
     </div>
     <Banners />
     <PauseBanner />

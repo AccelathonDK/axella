@@ -298,6 +298,31 @@ class Scheduler:
                 t += step
         return sorted(out, key=lambda x: x[2])
 
+    def next_digest(self, now=None):
+        """The next digest that will really run, by the same rules _tick uses: the slots, the schedule's vacation and
+        days off at that time (schedule.status), and a work-only slot on a paused work day. {'at', 'label', 'worlds'},
+        or None (digests off, or none in the next 31 days). For the line at the top of Today."""
+        now = (now or datetime.datetime.now()).replace(second=0, microsecond=0, tzinfo=None)
+        cfg = self.load()
+        if not cfg.get('enabled'):
+            return None
+        by_sid = {s['id']: s for s in cfg['digests']}
+        for add in range(0, 32):
+            day = (now + datetime.timedelta(days=add)).date()
+            for sid, task, hm, label in self.slots_for(day, cfg):
+                if TASKS[task]['kind'] != 'digest':
+                    continue
+                at = datetime.datetime.combine(day, datetime.time(_hm(hm) // 60, _hm(hm) % 60))
+                if at <= now:
+                    continue
+                st = self.sched.status(at)
+                if not st.get('digests'):
+                    continue
+                worlds = scope_mod.effective(scope_mod.worlds_of(by_sid.get(sid) or {}), st.get('work_paused'))
+                if worlds:
+                    return {'at': at.isoformat(timespec='minutes'), 'label': label, 'worlds': worlds}
+        return None
+
     # ---------- the clock ----------
     def clock(self):
         while True:
