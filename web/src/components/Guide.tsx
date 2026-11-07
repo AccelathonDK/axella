@@ -135,7 +135,7 @@ const CHAPTERS: { title: string; parts: Part[] }[] = [
       'Finished? Archive it – everything is kept and can be restored.',
     ] },
     { id: 'notes', icon: PencilLine, title: 'Notes', open: { label: 'Notes', view: { kind: 'notes' } }, lines: [
-      <>Your own notes – plain text, the first line is the title, links are clickable. Write one under Notes or + New, with ⋯ → <b className="font-medium">Note…</b> on any message (linked to that person and thread), or + Note on a person, project, trip or meeting prep.</>,
+      <>Your own notes – plain text, the first line is the title, links are clickable. Write one under Notes or + New, with <b className="font-medium">⌘J</b> / <b className="font-medium">Ctrl+J</b> anywhere (linked to the project, prep or person on screen), with ⋯ → <b className="font-medium">Note…</b> on any message (linked to that person and thread), or + Note on a person, project, trip or meeting prep.</>,
       <>Tick <b className="font-medium">Remind me when they write</b> and the next message from that person shows a quiet "Your note" chip on Today – Done stops it, Keep shows it again next time. For a meeting or a trip it shows on the day.</>,
       'Pin, Work/Private, Make a To do from the note or a selected line, and Delete (Restore from the Activity log for 90 days). Notes stay on the Mac mini: digests and drafts never read them; Ask Axella may when you ask, never a note linked to a private contact.',
     ] },

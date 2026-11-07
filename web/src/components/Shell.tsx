@@ -29,7 +29,7 @@ import { TaskFromHost } from '@/components/TaskFromMail'
 import { OutboxBar } from '@/components/Outbox'
 import { ArchiveHost, openArchive } from '@/components/Projects'
 import { KnowledgeHost, KnowledgeIcon } from '@/components/Knowledge'
-import { NoteHost, NoteIcon } from '@/components/Notes'
+import { NOTE_KEY, NoteHost, NoteIcon, useNoteShortcut } from '@/components/Notes'
 import { openNote, useNotesOwner } from '@/lib/notes'
 import { needsCheck, openKnowledge, useKnowledge } from '@/lib/knowledge'
 import { AskHost, AskIcon, openAsk } from '@/components/Ask'
@@ -412,7 +412,7 @@ function NewMenu({ compact = false }: { compact?: boolean }) {
       {ax.apiOk && <DropdownMenuItem onSelect={() => setTimeout(() => openNewPrep(), 120)}><MeetingIcon />Meeting prep</DropdownMenuItem>}
       <DropdownMenuItem onSelect={() => go({ kind: 'settings' }, 'reminders')}><Recurring />Recurring reminder</DropdownMenuItem>
       <DropdownMenuItem onSelect={() => openKnowledge({})}><KnowledgeIcon />Knowledge entry</DropdownMenuItem>
-      {notesOwner && <DropdownMenuItem onSelect={() => openNote({})} data-new-note=""><NoteIcon />Note</DropdownMenuItem>}
+      {notesOwner && <DropdownMenuItem onSelect={() => openNote({})} data-new-note=""><NoteIcon />Note<span className="text-ink-3 ml-auto text-xs max-sm:hidden">{NOTE_KEY}</span></DropdownMenuItem>}
     </DropdownMenuContent>
   </DropdownMenu>
 }
@@ -491,6 +491,7 @@ export function Shell({ children, ctx, setCtx }: { children: ReactNode; ctx: Ctx
   const c = useControls()
   useSwipe(open, setOpen)
   useReportShortcut()                                   // Cmd/Ctrl+B anywhere: Report a problem
+  useNoteShortcut()                                     // Cmd/Ctrl+J anywhere: a new note (owner only)
   useEffect(() => {                                     // "/" anywhere (not while typing) opens Search
     const k = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement

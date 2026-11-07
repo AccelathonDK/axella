@@ -182,7 +182,7 @@ export function NotesView() {
     </div>
     <Card className="divide-y overflow-hidden" data-notes-list="">
       {!shown.length ? <div className="text-ink-2 space-y-1 px-4 py-6 text-center text-sm">
-        <p>{debounced || ctx || kind ? 'No notes match.' : 'No notes yet.'}</p>
+        <p>{debounced || ctx || kind ? 'No notes match.' : `No notes yet – press ${NOTE_KEY} anywhere to jot one down.`}</p>
         {!debounced && !ctx && !kind && <p className="text-ink-3 text-[13px]">Write one here, or with ⋯ → Note… on any message – it is linked to that person, and can remind you when they write again.</p>}
       </div> : shown.map(n => <NoteRow key={n.id} n={n} />)}
     </Card>
@@ -221,4 +221,25 @@ export function NoteChip({ chip, itemId }: { chip: Chip; itemId?: string }) {
     <button type="button" disabled={busy} onClick={() => act('done')} className="text-ink-3 hover:text-ink rounded px-1.5 py-0.5" data-note-chip-done="">Done</button>
     {itemId && <button type="button" disabled={busy} onClick={() => act('keep')} className="text-ink-3 hover:text-ink rounded px-1.5 py-0.5" data-note-chip-keep="">Keep</button>}
   </div>
+}
+
+/* ⌘J / Ctrl+J ("jot") anywhere: a new note – linked to the project, meeting prep or person you're looking at */
+export const NOTE_KEY = /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘J' : 'Ctrl+J'
+export function useNoteShortcut() {
+  const { ax, view } = useApp()
+  const owner = useNotesOwner(ax.apiOk)
+  useEffect(() => {
+    if (!owner) return
+    const k = (e: KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'j') return
+      if (document.querySelector('[data-note-editor]')) return
+      e.preventDefault()
+      const links: NoteLink[] = view.kind === 'project' ? [{ kind: 'project', ref: view.id, label: ax.projects.find(p => p.id === view.id)?.name || 'Project' }]
+        : view.kind === 'meeting' ? [{ kind: 'meeting', ref: view.id, label: document.querySelector('h1')?.textContent?.trim().slice(0, 120) || 'Meeting' }]
+        : view.kind === 'person' ? [{ kind: 'person', ref: view.id, label: document.querySelector('h1')?.textContent?.trim().slice(0, 120) || view.id, keys: view.id.includes('@') ? [view.id] : [] }]
+        : []
+      openNote({ links })
+    }
+    addEventListener('keydown', k); return () => removeEventListener('keydown', k)
+  }, [owner, view, ax.projects])
 }
