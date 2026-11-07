@@ -33,7 +33,7 @@ json.dump({'paths': {'/axella/': []}}, open(A.ACCESS_FILE, 'w'))
 A.config = lambda: {}
 ok(A.owner_logins() == set(), 'nobody on the list: nobody is owner (fail closed)')
 ok({'contact_add', 'contact_delete', 'cal_update', 'cal_delete', 'cal_restore'} <= A.OWNER_ONLY, 'edits are owner-only actions')
-ok({a for a in A.OWNER_ONLY if not a.startswith(('meeting_', 'birthday_', 'trip_', 'project_', 'renewal_', 'block_settings', 'block_never', 'block_not_now', 'away_', 'backup_', 'teach_', 'rule_', 'suggest_', 'calm_setup_')) and a not in ('person_note', 'keep_set')} <= A.SLOW_ACTIONS,
+ok({a for a in A.OWNER_ONLY if not a.startswith(('meeting_', 'birthday_', 'trip_', 'project_', 'renewal_', 'block_settings', 'block_never', 'block_not_now', 'away_', 'backup_', 'teach_', 'rule_', 'suggest_', 'calm_setup_', 'note_')) and a not in ('person_note', 'keep_set')} <= A.SLOW_ACTIONS,
    '… contacts and calendar run in the background queue')
 ok({'person_note', 'keep_set'} <= A.OWNER_ONLY, 'People notes and keep in touch: owner only')
 ok('birthday_show' in A.OWNER_ONLY, '"Show birthday": owner only')

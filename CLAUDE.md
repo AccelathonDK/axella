@@ -46,6 +46,8 @@
 - Dashboard look and motion follow the Axella design system (project docs / artifact): tokens in `web/src/index.css`,
   icons only via `@/components/ax-icons`, dawn only for urgent/overdue, rows ≥ 44 px, honour Reduce Motion.
 - `knowledge/` (entries) is personal data like `state/` – never commit it. Runs only read it.
+- `notes/` (Notes) is personal data too – never commit it. No run reads it: Ask Axella gets a filtered copy for one run
+  (`state/ask-notes/<id>/`, no private contacts, protected workplaces per their Claude setting), counted in What leaves my home.
 - New item actions go through `ActionBar` in `ItemRow.tsx`, which also hands them to the iPhone swipes (`useRowSwipe`,
   `lib/rows.ts`) – keep the two in step.
 - Guided tours (`web/src/components/Tour.tsx` TOURS) point at `data-…` markers on the screens: a change to a screen with

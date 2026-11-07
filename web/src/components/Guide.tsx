@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Activity, Archive, Briefcase, ChevronRight, FolderKanban, Headphones, ListTodo, MailPlus, Newspaper, Phone, Receipt,
-  ShieldCheck, Inbox, Briefing as BriefingIcon, Lock, Search as SearchIcon, Calendar as CalendarIcon, Meeting as MeetingIcon, Trip as TripIcon, UserCircle, Palmtree, Reply, Moon, Sparkles, axi } from '@/components/ax-icons'
+  ShieldCheck, Inbox, Briefing as BriefingIcon, Lock, Search as SearchIcon, Calendar as CalendarIcon, Meeting as MeetingIcon, Trip as TripIcon, UserCircle, Palmtree, Reply, Moon, Sparkles, PencilLine, axi } from '@/components/ax-icons'
 import { AskIcon, openAsk } from '@/components/Ask'
 import { ReportIcon, openReport } from '@/components/Report'
 import { openCompose } from '@/components/Compose'
@@ -134,6 +134,11 @@ const CHAPTERS: { title: string; parts: Part[] }[] = [
       <>The <b className="font-medium">Mails</b> card on a project: Scan mail since a date finds mails by its tag, keywords in the subject and its senders, with why each matched – Add, or Not this project. Tick mails and Read with Claude suggests tasks, notes and dates you add with a tap. A project can link to a trip.</>,
       'Finished? Archive it – everything is kept and can be restored.',
     ] },
+    { id: 'notes', icon: PencilLine, title: 'Notes', open: { label: 'Notes', view: { kind: 'notes' } }, lines: [
+      <>Your own notes – plain text, the first line is the title, links are clickable. Write one under Notes or + New, with ⋯ → <b className="font-medium">Note…</b> on any message (linked to that person and thread), or + Note on a person, project, trip or meeting prep.</>,
+      <>Tick <b className="font-medium">Remind me when they write</b> and the next message from that person shows a quiet "Your note" chip on Today – Done stops it, Keep shows it again next time. For a meeting or a trip it shows on the day.</>,
+      'Pin, Work/Private, Make a To do from the note or a selected line, and Delete (Restore from the Activity log for 90 days). Notes stay on the Mac mini: digests and drafts never read them; Ask Axella may when you ask, never a note linked to a private contact.',
+    ] },
     { id: 'knowledge', icon: KnowledgeIcon, title: 'Knowledge', open: { label: 'Knowledge', view: { kind: 'knowledge' } }, lines: [
       'Short facts and standard answers your drafts may use – prices, times, terms. Drafts show "Based on …" when they used one.',
       'Every night Axella learns from your sent mail and suggests new entries; nothing is used until you approve it. Mailbox scans dig through older mail.',
@@ -208,7 +213,7 @@ const CHAPTERS: { title: string; parts: Part[] }[] = [
 ]
 
 // the newest parts, as a row at the top that jumps to them (keep it short; drop old entries as new ones arrive)
-const NEW: [string, string][] = [['calm-setup', 'Calm setup'], ['teach', 'Teaching Axella'], ['triage', 'Read in Mail'], ['sprint', 'Reply sprint'],
+const NEW: [string, string][] = [['notes', 'Notes'], ['calm-setup', 'Calm setup'], ['teach', 'Teaching Axella'], ['triage', 'Read in Mail'], ['sprint', 'Reply sprint'],
   ['away', 'Back from away'], ['backup', 'Backup'], ['receipts', 'Renewals']]
 
 export function GuideHost() {

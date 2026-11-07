@@ -14,6 +14,7 @@ HANDOVER.md
 /PUBLIC-RELEASE-FIXES*.md
 /SECURITY-REVIEW*.md
 knowledge/
+notes/
 
 # --- build output (made by `npm run deploy` in web/) ---
 /assets/

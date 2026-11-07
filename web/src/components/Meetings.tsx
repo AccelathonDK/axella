@@ -30,6 +30,8 @@ import {
 import { rowsOf, todayRows, type Row } from '@/lib/meetingRows'
 import type { Item, Project } from '@/lib/types'
 import { cn, isoDate } from '@/lib/utils'
+import { LinkedNotes } from '@/components/Notes'
+import { useNoteChips } from '@/lib/notes'
 
 export const MeetingIcon = Meeting
 const DAY = 864e5
@@ -211,6 +213,7 @@ function PrepLine({ p }: { p: PrepSummary }) {
 export function MeetingsCard() {
   const { go, ax, ctx } = useApp()
   const { preps, owner } = usePreps()
+  const chips = useNoteChips(ax.current?.name, !!owner)
   const { events } = useUpcoming(2)
   if (!ax.apiOk || !owner || !events || !preps) return null
   const now = Date.now()
@@ -224,7 +227,8 @@ export function MeetingsCard() {
     <div className="divide-y">
       {soon.map(r => <button key={r.key} className="hover:bg-bg-2/50 block w-full px-4 py-2.5 text-left text-sm" onClick={() => go({ kind: 'meeting', id: r.prep!.id })}>
         <span className="font-medium">{r.title}</span> <span className="text-ink-3 font-mono text-[12px]">at {hm(r.start!)}</span>
-        <span className="text-ink-3 block text-[12.5px]">Prep {r.prep!.status === 'ready' ? 'ready' : 'in draft'}{r.prep!.points ? ` · ${r.prep!.points} point${r.prep!.points === 1 ? '' : 's'}` : ''}</span></button>)}
+        <span className="text-ink-3 block text-[12.5px]">Prep {r.prep!.status === 'ready' ? 'ready' : 'in draft'}{r.prep!.points ? ` · ${r.prep!.points} point${r.prep!.points === 1 ? '' : 's'}` : ''}</span>
+        {chips?.meetings[r.prep!.id] && <span className="text-fjord mt-0.5 block truncate text-[12.5px]" data-note-chip-meeting="">▸ Your note: {chips.meetings[r.prep!.id].title}{chips.meetings[r.prep!.id].more ? ` · and ${chips.meetings[r.prep!.id].more} more` : ''}</span>}</button>)}
       {missing.map(r => <div key={r.key} className="flex items-center gap-2 px-4 py-2 text-sm">
         <span className="min-w-0 flex-1"><span className="block truncate">{r.title}</span>
           <span className="text-ink-3 font-mono text-[12px]">{dayHead(new Date(r.start!))} {hm(r.start!)} · no prep yet</span></span>
@@ -327,6 +331,7 @@ export function MeetingPrepView({ id }: { id: string }) {
             setOutcomes={(o, now) => set('outcomes', o, now)} />
         </div>
         <div className="min-w-0 space-y-4">
+          <LinkedNotes link={{ kind: 'meeting', ref: id, label: prep.title, date: String(prep.start || '').slice(0, 10) }} />
           {shielded && <AiChoice prep={prep} ai={ai} info={aiInfo} onChange={async v => {
             const was = ai; if (v) setAi(v)
             try { await post('meeting_update', { id, title: d.title, ai: v }); toast(v ? 'Saved for this meeting' : 'Back to the default'); load() } catch (e: any) { setAi(was); toast.error(e.message) }

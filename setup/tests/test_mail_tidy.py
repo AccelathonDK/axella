@@ -53,7 +53,7 @@ r = t.run()
 ok(len(calls) == 1 and calls[0] == ('read', 'Acme', '<m2@example.com>', 'unread', 'Acme', '<m1@example.com>'),
    'one AppleScript call for the batch; the last tap on a mail wins (m1: unread)')
 ok(r == {'marked': 2, 'missing': 0, 'skipped': 0, 'failed': 0}, 'counts only: 2 marked')
-ok('findMessage' in t.script and 'set read status of m to (st is "read")' in t.script and 'argv' in t.script,
+ok('findMessage' in t.script and 'set read status of m to (wantState is "read")' in t.script and 'argv' in t.script,
    'the script finds the mail by Message-ID and sets read status – user data only as argv')
 calls.clear(); queued.clear()
 for i in range(25):

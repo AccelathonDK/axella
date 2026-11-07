@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { NoteIcon } from '@/components/Notes'
+import { openNote, useNotesOwner, type Note } from '@/lib/notes'
 import { toast } from 'sonner'
 import { Loader2, Lock, Mail, Paperclip, Search as SearchIcon, X } from '@/components/ax-icons'
 import { Button } from '@/components/ui/button'
@@ -95,6 +97,8 @@ export function SearchView({ q0 = '' }: { q0?: string }) {
 
       {!ax.apiOk && <div className="text-ink-3 text-sm">Search needs the Mac mini – it isn't answering right now.</div>}
 
+      {s.length >= 2 && ax.apiOk && <NoteHits q={s} />}
+
       {s.length >= 2 && ax.apiOk && <section>
         <div className="ax-label mb-2 flex items-center gap-2">In Axella<span className="text-ink-3 normal-case tracking-normal">{hits ? hits.length + (hits.length === 50 ? '+' : '') : ''}</span></div>
         {!hits ? <Loading /> : !hits.length ? <div className="text-ink-3 text-sm">Nothing in your digests.</div>
@@ -148,3 +152,24 @@ export function SearchView({ q0 = '' }: { q0?: string }) {
 
 const Loading = ({ text = 'Searching…' }: { text?: string }) =>
   <div className={cn('text-ink-3 flex items-center gap-2 text-sm')}><Loader2 className="size-4 animate-spin" />{text}</div>
+
+/* your own notes (owner only – nothing for anyone else) */
+function NoteHits({ q }: { q: string }) {
+  const { ax } = useApp()
+  const owner = useNotesOwner(ax.apiOk)
+  const [list, setList] = useState<Note[] | null>(null)
+  useEffect(() => {
+    if (!owner) return
+    const t = setTimeout(() => get<{ notes: Note[] }>('notes?q=' + encodeURIComponent(q)).then(j => setList(j.notes || []), () => setList([])), 250)
+    return () => clearTimeout(t)
+  }, [q, owner])
+  if (!owner || !list?.length) return null
+  return <section data-search-notes="">
+    <div className="ax-label mb-2 flex items-center gap-2">Your notes<span className="text-ink-3 normal-case tracking-normal">{list.length}</span></div>
+    <ul className="bg-card divide-y rounded-lg border">{list.slice(0, 10).map(n => <li key={n.id}>
+      <button onClick={() => openNote({ id: n.id })} className="hover:bg-bg-2 flex w-full items-start gap-3 px-4 py-3 text-left">
+        <NoteIcon className="text-ink-3 mt-0.5 size-4 shrink-0" />
+        <span className="min-w-0 flex-1"><span className="block truncate font-medium">{n.title}</span>
+          {n.snippet && <span className="text-ink-3 line-clamp-1 block text-[13px]">{n.snippet}</span>}</span></button></li>)}</ul>
+  </section>
+}

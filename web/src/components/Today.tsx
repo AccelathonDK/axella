@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Pause, Play, Plug } from '@/components/ax-icons'
+import { Loader2, Pause, Play, Plug } from '@/components/ax-icons'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -24,6 +24,7 @@ export const jump = (k: string) => document.getElementById('sec-' + k)?.scrollIn
 export function useBySection() {
   const { ax, inCtx } = useApp()
   const by: Partial<Record<SectionKey, Item[]>> = {}
+  if (!ax.stateReady) return { by, openCount: () => 0, calls: [] as typeof ax.calls }   // until Done / Later is known (no handled items flashing up)
   ax.current?.data.items.filter(inCtx).forEach(i => (by[i.section] ||= []).push(i))
   const openCount = (k: SectionKey) => (by[k] || []).filter(i => !ax.isHandled(i.id)).length
   const calls = ax.calls.filter(inCtx)
@@ -158,6 +159,7 @@ export function TodayView() {
       <WrapCard />
       <BriefingSummary full />
       <div className="ax-label pt-2">Everything in this digest</div>
+      {!ax.stateReady && <div className="text-ink-3 flex items-center gap-2 py-6 text-sm" data-state-wait=""><Loader2 className="size-4 animate-spin" />Checking what you've already handled…</div>}
       <div className="grid grid-cols-1 items-start gap-5 min-[1100px]:grid-cols-[minmax(0,1.75fr)_minmax(0,1fr)]">
         <div className="min-w-0 space-y-4">
           {main.map((d, i) => <div key={d.key} className="space-y-4">

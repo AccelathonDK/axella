@@ -29,6 +29,8 @@ import { TaskFromHost } from '@/components/TaskFromMail'
 import { OutboxBar } from '@/components/Outbox'
 import { ArchiveHost, openArchive } from '@/components/Projects'
 import { KnowledgeHost, KnowledgeIcon } from '@/components/Knowledge'
+import { NoteHost, NoteIcon } from '@/components/Notes'
+import { openNote, useNotesOwner } from '@/lib/notes'
 import { needsCheck, openKnowledge, useKnowledge } from '@/lib/knowledge'
 import { AskHost, AskIcon, openAsk } from '@/components/Ask'
 import { ListenBar, toggleListen, useListening } from '@/components/Listen'
@@ -110,6 +112,7 @@ function SortableRow({ id, children }: { id: string; children: ReactNode }) {
 function SidebarBody({ onNav }: { onNav: () => void }) {
   const { ax, view, go, activeProjects, projectsFor, inCtx, ctx } = useApp()
   const kb = useKnowledge()
+  const notesOwner = useNotesOwner(ax.apiOk)
   const kbTodo = (kb || []).filter(e => e.status === 'suggested' || needsCheck(e)).length   // waiting for your OK
   const items = ax.current?.data.items || []
   const open = (f: (i: any) => boolean) => items.filter(i => !ax.isHandled(i.id) && inCtx(i) && f(i)).length
@@ -148,6 +151,7 @@ function SidebarBody({ onNav }: { onNav: () => void }) {
         {ax.apiOk && <NavItem icon={UserCircle} label="Contacts" active={view.kind === 'contacts'} onClick={() => nav({ kind: 'contacts' })} />}
         {ax.apiOk && <NavItem icon={BriefingNavIcon} label="Topic briefs" active={view.kind === 'briefings'} onClick={() => nav({ kind: 'briefings' })} />}
         {ax.apiOk && <NavItem icon={KnowledgeIcon} label="Knowledge" count={kbTodo || undefined} active={view.kind === 'knowledge'} onClick={() => nav({ kind: 'knowledge' })} />}
+        {ax.apiOk && notesOwner && <NavItem icon={NoteIcon} label="Notes" active={view.kind === 'notes'} onClick={() => nav({ kind: 'notes' })} tour="nav-notes" />}
         {ax.apiOk && <NavItem icon={BarChart3} label="Insights" active={view.kind === 'insights'} onClick={() => nav({ kind: 'insights' })} />}
         <NavItem icon={ArchiveIcon} label="Older digests" active={view.kind === 'archive'} onClick={() => nav({ kind: 'archive' })} />
       </div>
@@ -396,6 +400,7 @@ const iconBtn = 'text-ink-2 hover:text-ink hover:border-line-strong inline-flex 
 /* "+ New": the one place to start something – mail, task, reminder, knowledge (also on the phone) */
 function NewMenu({ compact = false }: { compact?: boolean }) {
   const { go, ax } = useApp()
+  const notesOwner = useNotesOwner(ax.apiOk)
   return <DropdownMenu>
     <DropdownMenuTrigger asChild>{compact
       ? <Button className="size-10 p-0" aria-label="New" data-tour="new"><Plus className="size-5" /></Button>
@@ -407,6 +412,7 @@ function NewMenu({ compact = false }: { compact?: boolean }) {
       {ax.apiOk && <DropdownMenuItem onSelect={() => setTimeout(() => openNewPrep(), 120)}><MeetingIcon />Meeting prep</DropdownMenuItem>}
       <DropdownMenuItem onSelect={() => go({ kind: 'settings' }, 'reminders')}><Recurring />Recurring reminder</DropdownMenuItem>
       <DropdownMenuItem onSelect={() => openKnowledge({})}><KnowledgeIcon />Knowledge entry</DropdownMenuItem>
+      {notesOwner && <DropdownMenuItem onSelect={() => openNote({})} data-new-note=""><NoteIcon />Note</DropdownMenuItem>}
     </DropdownMenuContent>
   </DropdownMenu>
 }
@@ -511,6 +517,7 @@ export function Shell({ children, ctx, setCtx }: { children: ReactNode; ctx: Ctx
       <TaskFromHost />
       <ArchiveHost />
       <KnowledgeHost />
+      <NoteHost />
       <GuideHost />
       <TourHost />
       <ReportHost />

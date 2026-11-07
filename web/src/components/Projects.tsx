@@ -19,6 +19,7 @@ import { archivePath } from '@/lib/data'
 import { PROJECT_COLORS, fileUrl, fmtSize, projColor, projectWorld, upload } from '@/lib/projects'
 import type { Project } from '@/lib/types'
 import { cn } from '@/lib/utils'
+import { LinkedNotes } from '@/components/Notes'
 
 const when = (iso?: string) => iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: new Date(iso).getFullYear() === new Date().getFullYear() ? undefined : 'numeric' }) : ''
 
@@ -142,6 +143,7 @@ export function ProjectView({ id }: { id: string }) {
           {p.status === 'active' && ax.apiOk && <ProjectTrips p={p} />}
           <Documents p={p} />
           <Notes p={p} />
+          <LinkedNotes link={{ kind: 'project', ref: p.id, label: p.name }} />
           <Links p={p} />
         </div>
       </div>

@@ -18,6 +18,7 @@ interface Out {
   reports: { sent: number }
   pictures: { senders: number; fetched?: number }
   meetings?: { pages: number; assist: number }
+  notes?: { read: number; asks: number }
 }
 
 const when = (iso?: string | null) => iso ? new Date(iso).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''
@@ -69,6 +70,8 @@ export function OutboundCard() {
         note={`Remote pictures load only when you tap Load pictures, or for the ${plural(d.pictures.senders, 'sender')} you always allow. Each one is fetched from your home connection, which tells that sender's server the mail was opened.`} />}
       {!!(d.meetings?.pages || d.meetings?.assist) && <Row title="Meeting prep" value={[d.meetings.pages && plural(d.meetings.pages, 'web page') + ' fetched', d.meetings.assist && plural(d.meetings.assist, 'assistant request')].filter(Boolean).join(' · ')}
         note="A web page is fetched once when you add it to a prep. The assistant sends that prep, its material and the context Axella gathered to Claude – only when you tap it, without private contacts or protected-workplace content." />}
+      {!!d.notes?.read && <Row title="Your notes" value={`Ask Axella read ${plural(d.notes.read, 'note')}` + (d.notes.asks > 1 ? ` in ${d.notes.asks} questions` : '')}
+        note="Only Ask Axella reads notes, and only when you ask it something – never a note linked to a private contact. Digests, drafts and the assistant never read them." />}
       {d.signal?.linked && <Row title="Signal" value="delivery receipts"
         note="The Mac mini is a linked Signal device: like your phone, it confirms to Signal that messages were delivered. Nothing else is sent." />}
       <p className="text-ink-3 px-4 py-3 text-[12px] leading-snug">Not Axella's doing and not listed: Apple Mail, Messages and WhatsApp syncing with their own servers, Tailscale, and macOS itself.</p>

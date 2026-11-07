@@ -21,10 +21,10 @@ MARK_SCRIPT_RUN = '''
 on run argv
   set out to ""
   repeat with i from 1 to (count of argv) by 3
-    set st to item i of argv
+    set wantState to item i of argv
     try
       set m to my findMessage(item (i + 1) of argv, item (i + 2) of argv)
-      tell application "Mail" to set read status of m to (st is "read")
+      tell application "Mail" to set read status of m to (wantState is "read")
       set out to out & "ok" & linefeed
     on error
       set out to out & "missing" & linefeed

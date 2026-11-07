@@ -15,6 +15,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { get, post } from '@/lib/api'
 import { useApp } from '@/lib/app'
 import { cn } from '@/lib/utils'
+import { LinkedNotes } from '@/components/Notes'
 import { ItemSheet, Lightbox } from '@/components/ItemSheet'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { Input, NativeSelect } from '@/components/ui/input'
@@ -323,6 +324,7 @@ function TripCard({ t, act, others = [], reload, calChoice }: { t: Trip; act: (a
     </div>)}</div>
     <TripPlanning t={t} reload={reload} />
     <Checklist t={t} reload={reload} />
+    <div className="border-t p-3"><LinkedNotes link={{ kind: 'trip', ref: t.id, label: t.title, date: String(t.start || '').slice(0, 10) }} /></div>
     {t.voided && t.voided.length > 0 && <Voided t={t} act={act} />}
   </Card>
 }

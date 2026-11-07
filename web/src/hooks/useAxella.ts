@@ -88,11 +88,15 @@ export function useAxella(): Ax {
   const dismissArrival = useCallback(() => setArrival(null), [])
   const hold = useRef(0)   // >0 while a form is being filled in: don't switch digest under the user's feet
 
+  // A failed load keeps what was known: an empty state would make every handled (done / later) item and call look
+  // open again for a moment – old messages flashing up when the phone wakes and the connection isn't back yet.
   const loadState = useCallback(async () => {
-    try { const j = await get('state'); setState(j.state || {}); setApiOk(true); return true }
-    catch { setApiOk(false); setState({}); return false }
-    finally { setStateReady(true) }
+    try { const j = await get('state'); setState(j.state || {}); setApiOk(true); setStateReady(true); return true }
+    catch { setApiOk(false); return false }
   }, [])
+  // the very first load failed (Tailscale still connecting): wait for the retry (every 5 s) before showing the digest
+  // without Done / Later known – after 8 s it shows anyway, as before, with the "can't reach the Mac mini" banner
+  useEffect(() => { const t = setTimeout(() => setStateReady(true), 8000); return () => clearTimeout(t) }, [])
   const loadTasks = useCallback(async () => { try { setTasks((await get('tasks')).tasks || []) } catch { setTasks([]) } }, [])
   // a failed load keeps the list it had (never "no projects" by accident) and tries again: 2 s, 5 s, 15 s
   const [projectsError, setProjectsError] = useState(false), [projectsLoaded, setProjectsLoaded] = useState(false)

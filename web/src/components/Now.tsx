@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { RenewalsCard } from '@/components/Renewals'
 import { SprintCard } from '@/components/Sprint'
 import { WelcomeCard } from '@/components/Welcome'
-import { ChevronRight, Pause, Play, axi } from '@/components/ax-icons'
+import { ChevronRight, Loader2, Pause, Play, axi } from '@/components/ax-icons'
 import { Card } from '@/components/ui/card'
 import { CallRow, TaskRow, taskInCtx } from '@/components/Cards'
 import { BriefsCard } from '@/components/Briefings'
@@ -23,6 +23,7 @@ import { cn, isoDate } from '@/lib/utils'
 import { WrapCard } from '@/components/Wrap'
 import { SuggestionCard } from '@/components/Learn'
 import { CalmSetupNudge } from '@/components/CalmSetup'
+import { LaterLine } from '@/components/Later'
 
 /* Today = Now + Briefing (the split agreed on the design canvas):
    - Now: one ranked queue of everything that needs the owner – urgent and overdue first, then today's replies, calls,
@@ -77,9 +78,13 @@ function Group({ label, n, children, hot }: { label: string; n: number; children
 }
 
 export function NowQueue() {
+  const { ax } = useApp()
   const { now, later, carried, answered, count } = useNow()
   const [showCarried, setShowCarried] = useState(false)
   const [showAnswered, setShowAnswered] = useState(false)
+  if (!ax.stateReady) return <div className="space-y-4" data-tour="today">   {/* until Done / Later is known – never old items flashing up */}
+    <Card className="text-ink-3 flex items-center gap-2 px-4 py-6 text-sm" data-state-wait=""><Loader2 className="size-4 animate-spin" />Checking what you've already handled…</Card>
+  </div>
   return <div className="space-y-4" data-tour="today">
     {now.length > 0 && <Group label="Now" n={now.length} hot>{now.map(e => e.node)}</Group>}
     {later.length > 0 && <Group label="Today" n={later.length}>{later.map(e => e.node)}</Group>}
@@ -191,8 +196,11 @@ export function BriefingSummary({ full = false }: { full?: boolean }) {
       <Tile label="To tidy" n={filing} sub={filing ? `${filing} to file` : 'Mailbox'} onClick={() => go({ kind: 'mailbox', tab: 'filing' })} />
     </div>
     </div>
-    {!full && <button onClick={() => go({ kind: 'briefing' })} className="text-fjord hover:bg-bg-2 flex w-full items-center justify-center gap-1 rounded-md py-2 text-sm font-medium">
-      Open the full briefing<ChevronRight className="size-4" /></button>}
+    {!full && <div className="space-y-1">
+      <button onClick={() => go({ kind: 'briefing' })} className="text-fjord hover:bg-bg-2 flex w-full items-center justify-center gap-1 rounded-md py-2 text-sm font-medium">
+        Open the full briefing<ChevronRight className="size-4" /></button>
+      <LaterLine place="side" />
+    </div>}
   </div>
 }
 const Line = ({ children }: { children: ReactNode }) =>
@@ -260,5 +268,6 @@ export function NowView() {
       <div className="max-[1099px]:hidden"><BriefingSummary /></div>
       <div className="space-y-3 min-[1100px]:hidden"><ScheduledCard /><CommitmentsCard /><PendingInvites limit={3} /><MeetingsCard /><PrivateCard /><BriefsCard since={cur && (cur.data as { generated?: string }).generated} /></div>
     </div>
+    <LaterLine place="main" />
   </div>
 }

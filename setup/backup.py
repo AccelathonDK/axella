@@ -9,7 +9,7 @@ The file (axella-backup-<date>.axbak) is age(tar.gz) with:
                    sha256}}, "left_out", "reconnect"}
   data/<path>     the files, relative to the Axella folder
 Core parts: state/ (settings, tasks, projects, trips, meetings, promises, privacy, VIPs, subscriptions, the SQLite
-store – copied consistently), knowledge/, AXELLA.md, contacts.md, setup/actions-config.json.
+store – copied consistently), knowledge/, notes/, AXELLA.md, contacts.md, setup/actions-config.json.
 History (a choice): digests/, calls/, the activity log (state/actions.log) and recordings (state/audio/).
 Never: the keys and tokens (TOKENS) and machine-only files (logs, sockets, temporary files, our own exports).
 
@@ -38,13 +38,13 @@ SUFFIX = '.axbak'
 MIN_PASS = 10
 KEEP = 4
 NAME = re.compile(r'^axella-backup-\d{4}-\d{2}-\d{2}(?:-\d+)?\.axbak$')
-CORE = ('state', 'knowledge', 'AXELLA.md', 'contacts.md', 'setup/actions-config.json')
+CORE = ('state', 'knowledge', 'notes', 'AXELLA.md', 'contacts.md', 'setup/actions-config.json')
 HISTORY = ('digests', 'calls', 'state/actions.log', 'state/audio')
 # keys and tokens – never in a backup; set up again after a restore (the RECONNECT list)
 TOKENS = ('state/voice-token', 'state/voice-lookup-key', 'state/report-install-token', 'state/report-triage-token',
           'state/vapid.json', 'state/push-subscriptions.json', 'state/mcp.json', 'state/signal-store.json')
 # machine-only: logs, sockets, caches, half-written files, outgoing uploads, our own exports
-SKIP_DIRS = ('state/runs', 'state/outbox', 'state/export', 'state/sock', 'state/kb', 'digests/archive/.tmp')
+SKIP_DIRS = ('state/ask-notes', 'state/runs', 'state/outbox', 'state/export', 'state/sock', 'state/kb', 'digests/archive/.tmp')
 SKIP_FILES = ('state/macuse-calendar-tools.json', 'state/backup.json')
 SKIP_RE = re.compile(r'(\.lock|\.tmp|\.db-wal|\.db-shm|\.DS_Store|\.pyc)$|/\.[^/]*\.tmp$|\.\d+\.\d+\.tmp$')
 RECONNECT = [

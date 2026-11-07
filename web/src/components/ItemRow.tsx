@@ -29,6 +29,8 @@ import { SendButton, type SendPhase } from '@/components/Send'
 import { openTaskFrom } from '@/components/TaskFromMail'
 import { openNewPrep } from '@/components/Meetings'
 import { TeachSheet } from '@/components/Learn'
+import { NoteChip, NoteIcon } from '@/components/Notes'
+import { itemLinks, openNote, useNoteChips, useNotesOwner } from '@/lib/notes'
 import { SendLaterButton, scheduleSend } from '@/components/SendLater'
 import { looksLikeInvite, openInvite } from '@/components/Invite'
 import { recipientLabel, type Person } from '@/components/Recipients'
@@ -44,6 +46,9 @@ export function ItemRow({ it }: { it: Item }) {
   const canPreview = ax.apiOk && it.channel === 'mail' && !!it.message_id && !!it.account
   const canOpen = !it.readonly || canPreview
   const handled = ax.isHandled(it.id)
+  const notesOwner = useNotesOwner(ax.apiOk)
+  const chips = useNoteChips(ax.current?.name, !!notesOwner && !it.readonly)
+  const chip = chips?.items[it.id]
   const Icon = ((it.section === 'p1' || it.section === 'p2') && it.channel && it.channel !== 'mail' && CH_ICON[it.channel]) || ITEM_ICON[it.section]   // a reply item shows its channel, not an envelope
   const Ch = it.channel ? CH_ICON[it.channel] : null
   const who = [it.from?.name, accLabel(it.account)].filter(Boolean).join(' · ')
@@ -95,6 +100,7 @@ export function ItemRow({ it }: { it: Item }) {
         {it.detail && <div className={cn('md-inline mt-0.5 text-[14.5px]', it.headline && 'text-muted-foreground')}
           dangerouslySetInnerHTML={{ __html: mdInline(String(it.detail).replace(/\n/g, ' ')) }} />}
         {it.safety && <SafetyNote it={it} className="mt-2" />}
+        {chip && !handled && <NoteChip chip={chip} itemId={it.id} />}
         {it.draft?.text && <div className="bg-bg-2 relative mt-2 rounded-md py-2 pr-11 pl-3 text-sm whitespace-pre-wrap">
           <PencilLine className="text-muted-foreground mr-1.5 -mt-0.5 inline size-3.5" />{it.draft.text}
           <button type="button" title="Copy draft" aria-label="Copy draft" className="text-muted-foreground hover:text-foreground hover:bg-background/60 absolute top-1.5 right-1.5 inline-flex size-8 items-center justify-center rounded-md"
@@ -192,12 +198,12 @@ export function laterChoices(now = new Date()) {
   if (monday.getTime() - at(1, 7).getTime() > 864e5) out.push(['Monday', '07:00', monday])
   return out
 }
-export function LaterMenu({ onPick, busy, disabled, label = 'Later' }: { onPick: (d: Date, label: string) => void; busy?: boolean; disabled?: boolean; label?: string }) {
+export function LaterMenu({ onPick, busy, disabled, label = 'Later', full }: { onPick: (d: Date, label: string) => void; busy?: boolean; disabled?: boolean; label?: string; full?: boolean }) {
   const date = useRef<HTMLInputElement>(null)
   return <span className="relative inline-flex">
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button size="pill" variant="outline" disabled={disabled} title="Bring it back later">{busy ? <Loader2 className="animate-spin" /> : <AlarmClock />}<span className="max-[420px]:hidden">{label}</span><ChevronDown className="!size-3.5 opacity-60" /></Button>
+        <Button size="pill" variant="outline" disabled={disabled} title="Bring it back later">{busy ? <Loader2 className="animate-spin" /> : <AlarmClock />}<span className={full ? '' : 'max-[420px]:hidden'}>{label}</span><ChevronDown className="!size-3.5 opacity-60" /></Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
         {laterChoices().map(([l, t, d]) => <DropdownMenuItem key={l} onSelect={() => onPick(d, l.toLowerCase() + ' ' + t)}>
@@ -225,6 +231,7 @@ export function ActionBar({ it, handled, onCal, onPreview, onLeave, api, draftTe
   const [sendPhase, setSendPhase] = useState<SendPhase>('idle')
   const [doneArmed, setDoneArmed] = useState(false)
   const [teach, setTeach] = useState<'not_important' | 'reached' | null>(null)   // Teach Axella: the reason sheet
+  const notesOwner = useNotesOwner(ax.apiOk)
   const lock = useRef(false)
   const drafts = useDrafts()
   const vips = useVips()
@@ -455,6 +462,8 @@ export function ActionBar({ it, handled, onCal, onPreview, onLeave, api, draftTe
   if (live && !flagged && it.from?.name && !isGroup && !(vipCandidate && !fromVip) && (fromVip || !isAutomatedSender(it.from?.address))) menu.push(<DropdownMenuItem key="vip" onSelect={() => actions.vip(!fromVip)}><Star />{fromVip ? `Remove ${it.from.name} from VIPs` : `Add ${it.from.name} to VIPs`}</DropdownMenuItem>)
   if (rl?.web) menu.push(<DropdownMenuItem key="waweb" asChild><a href={rl.web} target="_blank" rel="noopener noreferrer"><ExternalLink />Open in WhatsApp Web</a></DropdownMenuItem>)
   // People: the sender's page (their identities joined via Contacts; the Mac mini finds them by address or number)
+  // Notes: a note linked to this person and thread (owner only)
+  if (live && notesOwner && !flagged) menu.push(<DropdownMenuItem key="note" onSelect={() => openNote({ links: itemLinks(it) })} data-note-from-item=""><NoteIcon />Note…</DropdownMenuItem>)
   if (live && it.from?.address && !isGroup && !isAutomatedSender(it.from.address)) menu.push(<DropdownMenuItem key="person" onSelect={() => go({ kind: 'person', id: it.from!.address! })}><UserCircle />Open {it.from.name ? it.from.name.split(' ')[0] + '’s' : 'their'} page</DropdownMenuItem>)
   // Your calm: an item that should have broken through as urgent (counted under "Nothing missed" in Insights)
   // Teach Axella: a reason sheet (this sender / this topic / just this once) – a rule only from your tap

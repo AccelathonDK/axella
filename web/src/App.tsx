@@ -22,6 +22,7 @@ import { RunsView } from '@/components/Runs'
 import { StatusView } from '@/components/Status'
 import { InsightsView } from '@/components/Insights'
 import { KnowledgeView } from '@/components/Knowledge'
+import { NotesView } from '@/components/Notes'
 import { CleanupView } from '@/components/Cleanup'
 import { NowView } from '@/components/Now'
 import { MailboxView, TodoView } from '@/components/Hubs'
@@ -50,6 +51,7 @@ function viewFromUrl(): View {
   if (q.get('v') === 'status') return { kind: 'status' }
   if (q.get('v') === 'insights') return { kind: 'insights' }
   if (q.get('v') === 'knowledge') return { kind: 'knowledge' }
+  if (q.get('v') === 'notes') return { kind: 'notes' }
   if (q.get('v') === 'search') return { kind: 'search', q: q.get('q') || '' }
   if (q.get('v') === 'contacts') return { kind: 'contacts' }
   if (q.get('v') === 'calendar') return { kind: 'calendar' }
@@ -108,7 +110,7 @@ export default function App() {
     if (v.kind === 'meeting') { u.searchParams.set('v', 'meeting'); u.searchParams.set('m', v.id) }
     if (v.kind === 'person') { u.searchParams.set('v', 'person'); u.searchParams.set('c', v.id) }
     if (v.kind === 'search') { u.searchParams.set('v', 'search'); if (v.q) u.searchParams.set('q', v.q) }
-    if (v.kind === 'projects' || v.kind === 'archive' || v.kind === 'settings' || v.kind === 'receipts' || v.kind === 'runs' || v.kind === 'status' || v.kind === 'insights' || v.kind === 'knowledge' || v.kind === 'contacts' || v.kind === 'calendar' || v.kind === 'activity') u.searchParams.set('v', v.kind)
+    if (v.kind === 'projects' || v.kind === 'archive' || v.kind === 'settings' || v.kind === 'receipts' || v.kind === 'runs' || v.kind === 'status' || v.kind === 'insights' || v.kind === 'knowledge' || v.kind === 'notes' || v.kind === 'contacts' || v.kind === 'calendar' || v.kind === 'activity') u.searchParams.set('v', v.kind)
     history.pushState(null, '', u)
   }, [])
   useEffect(() => { const f = () => setView(viewFromUrl()); addEventListener('popstate', f); return () => removeEventListener('popstate', f) }, [])
@@ -137,7 +139,7 @@ export default function App() {
   return (
     <AppContext.Provider value={value}>
       <Shell ctx={ctx} setCtx={setCtx}>
-        {!ax.profileReady ? null : <Fragment key={profileVersion()}>{view.kind === 'today' ? <NowView /> : view.kind === 'briefing' ? <TodayView /> : view.kind === 'todo' ? <TodoView key={view.only || 'all'} tab={view.tab || 'tasks'} only={view.only} /> : view.kind === 'mailbox' ? <MailboxView tab={view.tab || 'filing'} /> : view.kind === 'projects' ? <ProjectsOverview /> : view.kind === 'archive' ? <ArchiveView /> : view.kind === 'settings' ? <SettingsView /> : view.kind === 'receipts' ? <ReceiptsView /> :  view.kind === 'runs' ? <RunsView /> : view.kind === 'status' ? <StatusView /> : view.kind === 'insights' ? <InsightsView /> : view.kind === 'knowledge' ? <KnowledgeView /> : view.kind === 'project' ? <ProjectView id={view.id} /> : view.kind === 'search' ? <SearchView q0={view.q} /> : view.kind === 'contacts' ? <ContactsView /> : view.kind === 'calendar' ? <CalendarView /> : view.kind === 'activity' ? <ActivityView /> : view.kind === 'briefings' ? <BriefingsView open={view.id} /> : view.kind === 'meetings' ? <MeetingsView /> : view.kind === 'trips' ? <TripsView /> : view.kind === 'meeting' ? <MeetingPrepView key={view.id} id={view.id} /> : view.kind === 'person' ? <PersonView key={view.id} id={view.id} /> : null}</Fragment>}
+        {!ax.profileReady ? null : <Fragment key={profileVersion()}>{view.kind === 'today' ? <NowView /> : view.kind === 'briefing' ? <TodayView /> : view.kind === 'todo' ? <TodoView key={view.only || 'all'} tab={view.tab || 'tasks'} only={view.only} /> : view.kind === 'mailbox' ? <MailboxView tab={view.tab || 'filing'} /> : view.kind === 'projects' ? <ProjectsOverview /> : view.kind === 'archive' ? <ArchiveView /> : view.kind === 'settings' ? <SettingsView /> : view.kind === 'receipts' ? <ReceiptsView /> :  view.kind === 'runs' ? <RunsView /> : view.kind === 'status' ? <StatusView /> : view.kind === 'insights' ? <InsightsView /> : view.kind === 'knowledge' ? <KnowledgeView /> : view.kind === 'notes' ? <NotesView /> : view.kind === 'project' ? <ProjectView id={view.id} /> : view.kind === 'search' ? <SearchView q0={view.q} /> : view.kind === 'contacts' ? <ContactsView /> : view.kind === 'calendar' ? <CalendarView /> : view.kind === 'activity' ? <ActivityView /> : view.kind === 'briefings' ? <BriefingsView open={view.id} /> : view.kind === 'meetings' ? <MeetingsView /> : view.kind === 'trips' ? <TripsView /> : view.kind === 'meeting' ? <MeetingPrepView key={view.id} id={view.id} /> : view.kind === 'person' ? <PersonView key={view.id} id={view.id} /> : null}</Fragment>}
       </Shell>
       <Toaster theme={dark ? 'dark' : 'light'} position="bottom-center" offset={56} mobileOffset={{ bottom: 84 }} toastOptions={{ className: '!rounded-md !text-sm !font-sans !shadow-float !border-line' }} />
     </AppContext.Provider>

@@ -14,6 +14,7 @@ import { NativeSelect } from '@/components/ui/input'
 import { get } from '@/lib/api'
 import { useApp } from '@/lib/app'
 import { cn } from '@/lib/utils'
+import { LinkedNotes } from '@/components/Notes'
 
 interface Line { id: string; channel: string; at: string; title?: string }
 interface Entry { id: string; digest?: string; channel: string; at: string; dir: 'in' | 'out' | 'call'; title?: string; snippet?: string; minutes?: number }
@@ -104,6 +105,7 @@ export function PersonView({ id }: { id: string }) {
     </Card>}
 
     <Notes p={p} />
+    <LinkedNotes link={{ kind: 'person', ref: id, label: p.name, keys: [...p.emails, ...p.phones] }} />
 
     <Card className="space-y-2 p-4" data-person-timeline="">
       <div className="ax-label">Timeline</div>

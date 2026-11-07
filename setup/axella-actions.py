@@ -1589,7 +1589,9 @@ def outbound(days=7):
                          'assist': acts.get('meeting_assist', 0)},
             'meeting_services': {k: tally_sum('svc:' + k, cutoff.date().isoformat()) for k in ('teams', 'google_meet', 'zoom', 'icloud')},
             'invites': {'sent': acts.get('cal_invite_send', 0), 'updated': acts.get('cal_invite_update', 0),
-                        'cancelled': acts.get('cal_invite_cancel', 0)}}
+                        'cancelled': acts.get('cal_invite_cancel', 0)},
+            'notes': {'read': tally_sum('notes_read', cutoff.date().isoformat()),
+                      'asks': tally_sum('notes_asks', cutoff.date().isoformat())}}
 
 
 def mail_search(q, limit=40):
@@ -1646,7 +1648,7 @@ def config():
 # the same pattern as web/src/lib/data.ts isNoReply: "noreply", "payments-noreply", "do_not_reply", "bounces+1" …
 NO_REPLY = re.compile(r'^(?:[^@]*[-+._])?(no-?reply|no_reply|do-?not-?reply|do_not_reply|mailer-daemon|postmaster|bounces?|notifications?)(?:[-+._][^@]*)?@', re.I)
 SENDS = ('reply_send', 'mail_send', 'invite_respond', 'cal_invite_send', 'cal_invite_update', 'cal_invite_cancel', 'schedule_send', 'schedule_update', 'draft', 'draft_new', 'sms_send', 'compose', 'ask', 'report_save', 'report_check',
-         'report_send', 'report_preview', 'triage_act', 'task_suggest', 'compose_assist')
+         'report_send', 'report_preview', 'triage_act', 'task_suggest', 'compose_assist', 'note_save', 'note_todo')
 
 
 LOG_LOCK = threading.Lock()                           # appends and the 90-day archiving never interleave
@@ -3742,6 +3744,8 @@ def do_action(action, p):
             lowered = _learned.Learned.lower_item(DIGESTS_DIR, str(p['item_id'])[:200])
             return {'message': 'Moved to FYI – just this once' if lowered else 'Noted – just this once', 'rule': None}
         return {'message': 'Noted', 'rule': _teach('not_important', p)}
+    if action in ('note_save', 'note_keep', 'note_delete', 'note_restore', 'note_todo'):   # Notes (owner only)
+        return note_action(action, p)
     if action in ('rule_remove', 'rule_restore'):     # Settings → Rules → Learned from you
         try:
             rid = str(p.get('id') or '')[:20]
@@ -4317,11 +4321,166 @@ def sprint_view():
     return dict(v, digest=name)
 
 
+import notes as _notes  # noqa: E402  (Notes: Axella's own notes, linked to people, projects, trips, preps and threads)
+NOTES = _notes.Notes(BASE, os.path.join(STATE_DIR, 'deleted', 'notes'))
+
+
+def _note_keys(m):
+    """Every identity a note is linked to (people, mail and chat senders)."""
+    return {k for l in m.get('links') or [] for k in l.get('keys') or []}
+
+
+def note_readable(m):
+    """May Ask Axella read this note? Never one linked to a private or hidden contact; one linked to a protected
+    workplace only when that workplace's Claude setting (Meetings page) isn't "none" – a note is your own text, so
+    "own" allows it, as for a meeting prep. Fails closed."""
+    import meetings as _mt
+    keys = sorted(_note_keys(m))
+    if keys and mail_privacy(keys)[0]:
+        return False
+    defaults = MEET.ai_defaults()
+    wps = set()
+    for k in keys:
+        if '@' in k:
+            for w in profile.workplaces():
+                if w.get('protected') and any(k.endswith('@' + d) or k.endswith('.' + d) for d in w['domains']):
+                    wps.add(w['id'])
+    accs = {a['id']: a for a in profile.accounts()}
+    for l in m.get('links') or []:
+        a = accs.get(l.get('account') or '')
+        if a and a.get('workplace') and any(w['id'] == a['workplace'] and w.get('protected') for w in profile.workplaces()):
+            wps.add(a['workplace'])
+        if l['kind'] == 'meeting':
+            prep = MEET.get(l['ref']) if hasattr(MEET, 'get') else None
+            if prep:
+                if meeting_ai(prep)[1] == 'none':
+                    return False
+    for w in wps:
+        mode = _mt.effective_ai({}, [w], defaults)[0]
+        if mode == 'none':
+            return False
+    return True
+
+
+def _ask_notes(cid, login=None):
+    """Ask Axella: the notes it may read, copied for this one run (state/ask-notes/<id>/) – removed when it ends.
+    Only when the owner asks: anyone else on the access list can use Ask, but never gets an answer from your notes."""
+    _ask_notes_sweep()
+    if login not in owner_logins() or not re.match(r'^[\w-]{1,80}$', str(cid or '')):
+        return 0
+    return NOTES.export_for_ask(os.path.join(STATE_DIR, 'ask-notes', cid), note_readable)
+
+
+def _ask_notes_sweep(max_age=3600):
+    """A copy left behind by an Ask run that crashed: removed after an hour (at start: all of them, nothing runs yet)."""
+    import time as _time
+    root = os.path.join(STATE_DIR, 'ask-notes')
+    try:
+        for n in os.listdir(root):
+            p = os.path.join(root, n)
+            if os.path.isdir(p) and _time.time() - os.path.getmtime(p) >= max_age:
+                NOTES.drop_export(p)
+    except OSError:
+        pass
+
+
+def _ask_notes_done(cid, read):
+    """After an Ask run: how many notes it read (from its own tool log) – What leaves my home – and the copy gone."""
+    if read:
+        tally('notes_read', read)
+        tally('notes_asks', 1)
+    if re.match(r'^[\w-]{1,80}$', str(cid or '')):
+        NOTES.drop_export(os.path.join(STATE_DIR, 'ask-notes', cid))
+
+
+def note_chips(name=None):
+    """The quiet "Your note" chips for the digest Today shows – matched here, never written into the digest."""
+    if name and not re.match(r'^[\w-]+\.json$', name):
+        raise Bad('bad digest name')
+    if not name:
+        name, items = _sprint_digest()
+    else:
+        d = load_json(os.path.join(DIGESTS_DIR, name), {})
+        items = d.get('items') if isinstance(d, dict) else []
+    today = datetime.date.today().isoformat()
+    preps = [(x.get('id'), str(x.get('start') or '')[:10]) for x in (MEET.load().get('preps') or []) if isinstance(x, dict)]
+    trips_ = [(t.get('id'), str(t.get('start') or '')[:10]) for t in (TRIPS.load().get('trips') or []) if isinstance(t, dict)]
+    return NOTES.chips(items or [], datetime.date.today(), preps, trips_)
+
+
+def note_action(action, p):
+    try:
+        if action == 'note_save':
+            r = NOTES.save(p)
+            p['title'] = r.get('title') or 'Note'
+            return r
+        if action == 'note_keep':
+            return NOTES.keep(str(p.get('id') or ''), p.get('item_id'))
+        if action == 'note_delete':
+            r = NOTES.delete(str(p.get('id') or ''))
+            p['title'], p['_backup'] = r.get('title') or 'Note', r['backup']
+            return r
+        if action == 'note_restore':
+            r = NOTES.restore(str(p.get('backup') or ''))
+            p['title'] = r.get('title') or 'Note'
+            return r
+        if action == 'note_todo':
+            nid = str(p.get('id') or '')
+            n = NOTES.view(nid)
+            text = ' '.join(str(p.get('text') or n.get('title') or '').split())[:500]
+            if not text:
+                raise Bad('which line?')
+            p['title'] = text[:80]
+            tid = task_action('task_add', {'text': text, 'source': 'note', 'ref': {'note': nid, 'title': n.get('title')},
+                                           'ctx': n.get('ctx')})
+            return {'task': tid}
+    except _notes.Bad as e:
+        raise Bad(str(e))
+    raise Bad('unknown action')
+
+
+def _until(v):
+    """A snooze's "until" as a naive local datetime (the browser sends UTC with an offset), or None."""
+    try:
+        d = datetime.datetime.fromisoformat(str(v or '').strip().replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    return d.astimezone().replace(tzinfo=None) if d.tzinfo else d
+
+
+def later_view(now=None):
+    """What you pushed to Later and when it comes back (the line at the bottom of Today): the snoozed items in
+    state/actions.json that haven't come back yet, each with its item from the newest digest that has it (None when
+    that digest is gone – the title it was pushed under is kept). Read-only: the items are what the digests show."""
+    now = now or datetime.datetime.now()
+    want = {}
+    for k, v in load_json(STATE_FILE, {}).items():
+        u = _until(v.get('until')) if isinstance(v, dict) and v.get('status') == 'snoozed' else None
+        if u and u > now:
+            want[k] = (u, v)
+    found = {}
+    try:
+        names = sorted((n for n in os.listdir(DIGESTS_DIR) if n.endswith('.json') and n[:4].isdigit()), reverse=True)
+    except OSError:
+        names = []
+    for n in names:
+        if len(found) == len(want):
+            break
+        d = load_json(os.path.join(DIGESTS_DIR, n), {})
+        for it in (d.get('items') or []) if isinstance(d, dict) else []:
+            if isinstance(it, dict) and it.get('id') in want and it['id'] not in found:
+                found[it['id']] = it
+    out = [{'id': k, 'until': u.isoformat(timespec='minutes'), 'title': str(v.get('title') or '')[:200], 'item': found.get(k)}
+           for k, (u, v) in want.items()]
+    return {'items': sorted(out, key=lambda x: (x['until'], x['id']))}
+
+
 import away as _away  # noqa: E402  (Back-from-away briefing: the first digest after 2+ days away)
 AWAY = _away.Away(STATE_DIR)
 import learned as _learned  # noqa: E402  (Teach Axella: feedback, rules suggested from your habits, Settings → Rules)
 LEARN = _learned.Learned(STATE_DIR)
-RUNNER.learned_note = lambda: LEARN.prompt_note()   # the "Learned rules" block for the digest and urgent-check runs
+RUNNER.learned_note = lambda: LEARN.prompt_note()
+RUNNER.ask_notes, RUNNER.ask_notes_done = (lambda cid, login=None: _ask_notes(cid, login)), (lambda cid, n: _ask_notes_done(cid, n))   # the "Learned rules" block for the digest and urgent-check runs
 import calm_setup as _calm_setup  # noqa: E402  (Calm setup: Settings → Notifications, three steps)
 CALM_SETUP = _calm_setup.CalmSetup(STATE_DIR, DIGESTS_DIR)
 
@@ -5199,7 +5358,7 @@ SLOW_ACTIONS = {'draft', 'draft_new', 'reply_send', 'mail_send', 'invite_respond
                 'contact_add', 'contact_update', 'contact_delete', 'contact_restore',
                 'cal_add', 'cal_update', 'cal_delete', 'cal_restore', 'trip_cal_add', 'trip_cal_sync', 'trip_cal_remove'}
 # changing contacts and the calendar: the owner's own login only – anyone else on the access list reads
-OWNER_ONLY = {'teach_not_important', 'rule_remove', 'rule_restore', 'suggest_accept', 'suggest_later', 'suggest_never',
+OWNER_ONLY = {'note_save', 'note_keep', 'note_delete', 'note_restore', 'note_todo', 'teach_not_important', 'rule_remove', 'rule_restore', 'suggest_accept', 'suggest_later', 'suggest_never',
               'calm_setup_step', 'calm_setup_dismiss', 'backup_export', 'backup_auto', 'backup_run', 'away_archive', 'away_undo', 'away_catchup', 'block_settings', 'block_never', 'block_not_now', 'block_hold', 'renewal_add', 'renewal_not', 'renewal_update', 'renewal_snooze', 'renewal_let_renew', 'renewal_renewed', 'renewal_past',
               'renewal_delete', 'renewal_scan', 'renewal_todo', 'contact_add', 'contact_update', 'contact_delete', 'contact_restore', 'cal_add', 'cal_update', 'cal_delete', 'cal_restore',
               'project_mail_scan', 'project_mail_add', 'project_mail_not', 'project_mail_undo_not', 'project_mail_remove',
@@ -5935,6 +6094,23 @@ class Handler(BaseHTTPRequestHandler):
             if login not in owner_logins():
                 return self._send(403, {'ok': False, 'error': 'Only the owner can see this'})
             return self._send(200, {'ok': True, **backup_view()})
+        if a in ('notes', 'note', 'note_chips'):             # Notes: owner only, like meeting preps
+            if login not in owner_logins():
+                return self._send(403, {'ok': False, 'error': 'Only the owner can see notes'})
+            from urllib.parse import parse_qs, urlparse
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                if a == 'note':
+                    return self._send(200, {'ok': True, 'note': NOTES.view(q.get('id', [''])[0][:20])})
+                if a == 'note_chips':
+                    return self._send(200, {'ok': True, **note_chips(q.get('digest', [''])[0][:120] or None)})
+                kind = q.get('kind', [''])[0] or None
+                return self._send(200, {'ok': True, 'notes': NOTES.list(q.get('q', [''])[0][:200], kind if kind in _notes.KINDS else None,
+                                                                        q.get('ref', [None])[0])})
+            except (_notes.Bad, Bad) as e:
+                return self._send(400, {'ok': False, 'error': str(e)})
+        if a == 'later':                                  # what you pushed to Later (Today, the bottom line)
+            return self._send(200, {'ok': True, **later_view()})
         if a == 'learn':                                  # Teach Axella: Settings → Rules, and the one suggestion card
             if login not in owner_logins():
                 return self._send(403, {'ok': False, 'error': 'Only the owner can see this'})
@@ -6630,9 +6806,26 @@ def peer_is_tailscale(client_port, server_port, state_dir=None):
 
 class TailscaleOnlyServer(ThreadingHTTPServer):
     state_dir = None
+    # A page load opens 15+ connections at once. With the default backlog of 5, and the peer check (netstat + ps)
+    # run one connection after another on the accept loop, the rest were reset – Tailscale Serve answered 502, and
+    # cards like Later, Meetings or Renewals stayed empty.
+    request_queue_size = 64
 
     def verify_request(self, request, client_address):
-        return peer_is_tailscale(client_address[1], self.server_address[1], self.state_dir)
+        return True        # the peer check runs in the connection's own thread – process_request_thread below
+
+    def process_request_thread(self, request, client_address):
+        """The peer check for one connection, in its own thread: connections that arrive together share one netstat
+        snapshot taken after they were accepted, instead of queueing on the accept loop. A refused connection is
+        closed before a byte of it is read, as before; an error in the check refuses (fails closed)."""
+        try:
+            ok = peer_is_tailscale(client_address[1], self.server_address[1], self.state_dir)
+        except Exception:
+            ok = False
+        if not ok:
+            self.shutdown_request(request)
+            return
+        super().process_request_thread(request, client_address)
 
 
 if __name__ == '__main__':
@@ -6663,6 +6856,7 @@ if __name__ == '__main__':
             time.sleep(120)
     threading.Thread(target=_auto_forward_loop, daemon=True).start()
 
+    _ask_notes_sweep(0)                            # at start nothing runs yet: no Ask copy may stay
     def _housekeeping_loop():
         """Once a day: activity log lines older than 90 days → state/actions-archive/; backups of deleted contacts and
         events older than 90 days → state/deleted/*/_expired/. Moved, never deleted."""
@@ -6676,6 +6870,7 @@ if __name__ == '__main__':
                     contacts_book.prune_backups(os.path.join(BACKUP_DIR, sub))
                 import meetings
                 meetings.prune_backups(os.path.join(BACKUP_DIR, 'meetings'))
+                _ask_notes_sweep()                     # Ask copies left behind by a crashed run
             except Exception as e:
                 sys.stderr.write('housekeeping: %s\n' % str(e)[:200])
             time.sleep(86400)

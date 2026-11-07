@@ -58,7 +58,7 @@ SECRETS = ('state/voice-token', 'state/voice-lookup-key', 'state/report-install-
            'state/privacy.json', 'state/private-inbox.json', 'state/private-notified.json', 'state/signal-store.json',
            'state/private-calls.json', 'state/private-calls/**', 'state/contacts-book.json', 'state/people-notes.json', 'state/keep-in-touch.json', 'state/bills.json', 'state/trip-checklists.json', 'state/recurring.json', 'state/renewals.json', 'state/blocks.json', 'state/away.json', 'state/backup.json', 'state/export/**', 'pre-restore-*/**', 'state/project-mail.json', 'state/online-meetings.json', 'state/calendar-invites.json',
            'state/deleted/**', 'state/macuse-calendar-tools.json', 'state/meetings/**',
-           'state/scheduled.json', 'state/scheduled-files/**', 'state/promises.json')   # who is private is not for Claude either
+           'state/scheduled.json', 'state/scheduled-files/**', 'state/promises.json', 'notes/**')   # who is private is not for Claude either
 
 # the apps' own message stores – runs see mail and messages only through Macuse (filtered) and the exports
 APP_STORES = ('~/Library/Messages/**', '~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/**',
@@ -167,6 +167,8 @@ class Scheduler:
         self.away_due = None            # date -> the absence to brief now (away.Away.due) or None – set by axella-actions.py
         self.away_facts = None          # job -> the briefing's facts (away.facts), written before its run – axella-actions.py
         self.learned_note = None        # () -> the "Learned rules" block (learned.Learned.prompt_note) – axella-actions.py
+        self.ask_notes = None           # (ask id, login) -> notes copied for this Ask run – none unless the owner asks
+        self.ask_notes_done = None      # (ask id, notes read) -> after the run: count it, remove the copy
         self.current = None             # {'run': {...}, 'proc': Popen}
         self.cv = threading.Condition(LOCK)
         os.makedirs(self.run_dir, exist_ok=True)
@@ -898,6 +900,15 @@ class Scheduler:
                 usage = {'input': u.get('input_tokens', 0) + u.get('cache_read_input_tokens', 0) + u.get('cache_creation_input_tokens', 0),
                          'output': u.get('output_tokens', 0), 'turns': result.get('num_turns'),
                          'cost_usd': result.get('total_cost_usd')}
+            if spec['kind'] == 'ask' and self.ask_notes_done:
+                try:                                    # notes read (a Grep over the folder counts as all of them)
+                    nread = stats.get('notes') or set()
+                    folder = os.path.join(self.state_dir, 'ask-notes', str(job.get('ref') or ''))
+                    total = len([x for x in os.listdir(folder) if x.endswith('.txt')]) if os.path.isdir(folder) else 0
+                    n = total if any(x.startswith('*') for x in nread) else len([x for x in nread if x.endswith('.txt')])
+                    self.ask_notes_done(job.get('ref'), min(n, total) if total else n)
+                except Exception as e:
+                    w('Ask notes: %s' % str(e)[:200])
             if cancelled == 'cancel':
                 status, reason = 'cancelled', 'cancelled from the dashboard'
             elif cancelled == 'timeout':
@@ -1121,6 +1132,9 @@ class Scheduler:
         never += ['Read(~/.ssh/**)', 'Read(~/Library/Keychains/**)', 'Read(~/.aws/**)', 'Read(~/.config/**)', 'Read(~/.claude/**)']
         never += ['Read(%s)' % p for p in APP_STORES]
         never += ['Read(/reports/**)', 'Read(/%s/reports/**)' % self.base]   # problem reports may hold a real screenshot
+        if spec['kind'] != 'ask':                  # Notes: only an Ask run reads its own filtered copy of them
+            never += ['%s(/state/ask-notes/**)' % t for t in ('Read', 'Grep', 'Glob')] + \
+                     ['%s(/%s/state/ask-notes/**)' % (t, self.base) for t in ('Read', 'Grep', 'Glob')]
         never += ['%s(/%s)' % (t, FEEDBACK_INBOX) for t in ('Read', 'Grep', 'Glob')] + \
                  ['%s(/%s/%s)' % (t, self.base, FEEDBACK_INBOX) for t in ('Read', 'Grep', 'Glob')]
         cmd = [claude, '-p', prompt, '--model', model, '--output-format', 'stream-json', '--verbose',
@@ -1279,6 +1293,10 @@ class Scheduler:
                         stats.setdefault('queries', []).append(str(inp.get('query') or '')[:300])   # not the model's own list
                     if stats is not None and c.get('name') == 'WebFetch':
                         stats.setdefault('fetched', []).append(str(inp.get('url') or '')[:500])
+                    if stats is not None and c.get('name') in ('Read', 'Grep', 'Glob'):    # Ask: which notes it opened
+                        where = str(inp.get('file_path') or inp.get('path') or inp.get('pattern') or '')
+                        if 'state/ask-notes/' in where:
+                            stats.setdefault('notes', set()).add(where.rsplit('/', 1)[-1] if c.get('name') == 'Read' else '*' + where)
                     if c.get('name') in ('Write', 'Edit'):
                         arg = inp.get('file_path', '')
                     else:
@@ -1646,7 +1664,14 @@ class Scheduler:
         ctx = p.get('context') if isinstance(p.get('context'), dict) else {}
         import axprofile as profile
         cid = _now().strftime('%Y%m%d-%H%M%S-') + uuid.uuid4().hex[:6]
+        n_notes = 0
+        if self.ask_notes:
+            try:
+                n_notes = self.ask_notes(cid, p.get('_login'))     # the owner's Ask only (axella-actions)
+            except Exception as e:
+                self.log.write('%s ask notes: %s\n' % (_iso(), str(e)[:200]))
         req = {'id': cid, 'at': _iso(), 'question': q, 'history': hist, 'owner': profile.owner(),
+               'notes': {'folder': 'state/ask-notes/%s' % cid, 'count': n_notes} if n_notes else None,
                'context': {'view': str(ctx.get('view') or '')[:40], 'project': str(ctx.get('project') or '')[:100],
                            'digest': str(ctx.get('digest') or '')[:120], 'filter': str(ctx.get('filter') or 'all')[:10]}}
         d = os.path.join(self.state_dir, 'ask')

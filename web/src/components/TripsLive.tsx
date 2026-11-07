@@ -13,6 +13,8 @@ import { NativeSelect } from '@/components/ui/input'
 import { get } from '@/lib/api'
 import { useApp } from '@/lib/app'
 import { cn } from '@/lib/utils'
+import { NoteChip } from '@/components/Notes'
+import { useNoteChips, useNotesOwner } from '@/lib/notes'
 
 export interface LBooking { key: string; kind: string; title: string; start: string; end: string; status?: string; number?: string; ref?: string
   place?: string; address?: string; provider?: string
@@ -111,7 +113,9 @@ interface TodayCard { trip: { id: string; title: string }; mode: 'travel' | 'eve
 
 /** The Today card on a travel day (and the evening before), or the day's plan during a trip – works offline too. */
 export function TravelCard() {
-  const { go } = useApp()
+  const { go, ax } = useApp()
+  const notesOwner = useNotesOwner(ax.apiOk)
+  const chips = useNoteChips(ax.current?.name, !!notesOwner)
   const [c, setC] = useState<TodayCard | null>(null)
   useEffect(() => { get<{ card: TodayCard | null }>('trip_today').then(r => setC(r.card)).catch(() => {}) }, [])
   if (!c) return null
@@ -123,6 +127,7 @@ export function TravelCard() {
     <div className="text-[17px] font-semibold leading-snug">{[n.number || n.title, hm(n.start), where].filter(Boolean).join(' · ')}
       {n.checkin && <span className={cn('ml-2 text-[13px] font-normal', open ? 'text-fjord' : 'text-ink-3')}>{open ? 'check-in open' : 'check-in ' + dayhm(n.checkin.at)}{n.checkin.estimated ? ' (estimated)' : ''}</span>}</div>
     {n.number && n.title && <div className="text-ink-3 text-[13px]">{n.title}{n.provider ? ' · ' + n.provider : ''}</div>}
+    {chips?.trips[c.trip.id] && <NoteChip chip={chips.trips[c.trip.id]} />}
     <div className="flex flex-wrap gap-2">
       {n.ref && <Button size="pill" variant="outline" onClick={() => navigator.clipboard.writeText(n.ref!).then(() => toast('Reference copied'), () => {})}><Copy /><span className="font-mono">{n.ref}</span></Button>}
       {where && <Button size="pill" variant="outline" asChild><a href={'https://maps.apple.com/?q=' + encodeURIComponent(where)} target="_blank" rel="noopener noreferrer"><ExternalLink />Maps</a></Button>}
