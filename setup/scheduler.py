@@ -94,6 +94,8 @@ COMPOSE_KEEP_DAYS = 14
 DIGEST_GRACE = 20 * 60      # a digest slot missed (service down) still starts up to 20 min late
 P0_GRACE = 10 * 60
 RETRY_AFTER = 3 * 60
+ALERT_REMIND = 6 * 3600          # a problem that is still there gets one reminder this often, no more
+ALERT_LOCK = threading.Lock()
 KEEP_DAYS = 30         # runs and their logs are kept this long
 RUNS_CAP = 3000        # a hard cap on top of the 30 days (≈ 100 runs a day); counts at the cap are shown as "3000+"
 
@@ -977,12 +979,79 @@ class Scheduler:
                     self.queue.append({**job, 'attempt': 2, 'trigger': 'retry', 'not_before': time.time() + RETRY_AFTER})
                     self.cv.notify_all()
             else:
-                try:
-                    self.push({'title': 'Axella: %s failed twice' % run['label'],
-                               'body': (reason or 'see Runs in the dashboard')[:150], 'tag': 'axella-run-failed',
-                               'url': '/axella/?v=runs'})
-                except Exception as e:
-                    self.log.write('%s run-failed push: %s\n' % (_iso(), str(e)[:200]))
+                self._alert_failed(task, run['label'], reason)
+        elif status == 'ok':
+            self._alert_ok(task)
+
+    # One push when a problem starts, one reminder if it is still there after ALERT_REMIND, one when it is fixed –
+    # not one per failed run. Runs that fail because Macuse is down share one alert. state/run-alerts.json keeps it
+    # across restarts: task names, labels, times and the short reason only.
+    def _alert_key(self, task, reason):
+        return 'macuse' if (reason or '').startswith('Macuse (') else task
+
+    def _alerts(self):
+        try:
+            with open(os.path.join(self.state_dir, 'run-alerts.json')) as f:
+                a = json.load(f)
+            return a if isinstance(a, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def _alerts_save(self, a):
+        p = os.path.join(self.state_dir, 'run-alerts.json')
+        tmp = p + '.tmp'
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w') as f:
+            json.dump(a, f)
+        os.replace(tmp, p)
+
+    def _alert_push(self, msg):
+        try:
+            self.push(msg)
+        except Exception as e:
+            self.log.write('%s run-alert push: %s\n' % (_iso(), str(e)[:200]))
+
+    def _alert_failed(self, task, label, reason, now=None):
+        now = time.time() if now is None else now
+        key = self._alert_key(task, reason)
+        with ALERT_LOCK:
+            alerts = self._alerts()
+            a = alerts.get(key)
+            if a:
+                a['count'] = a.get('count', 1) + 1
+                if task not in a['tasks']:
+                    a['tasks'].append(task)
+                a['reason'] = (reason or '')[:150]
+                if now - a.get('pushed', 0) < ALERT_REMIND:
+                    self._alerts_save(alerts)
+                    return
+                a['pushed'] = now
+                title = 'Axella: Macuse still not available' if key == 'macuse' else 'Axella: %s still failing' % label
+                body = 'Since %s, %d failed runs – %s' % (time.strftime('%a %H:%M', time.localtime(a['since'])), a['count'],
+                                                          a['reason'] or 'see Runs in the dashboard')
+            else:
+                a = alerts[key] = {'since': now, 'pushed': now, 'count': 1, 'tasks': [task], 'label': label,
+                                   'reason': (reason or '')[:150]}
+                title = 'Axella: Macuse not available' if key == 'macuse' else 'Axella: %s failed twice' % label
+                body = (reason or 'see Runs in the dashboard') + ' – you get one more message when it works again'
+            self._alerts_save(alerts)
+        self._alert_push({'title': title, 'body': body[:150], 'tag': 'axella-alert-' + key, 'url': '/axella/?v=runs'})
+
+    def _alert_ok(self, task, now=None):
+        now = time.time() if now is None else now
+        with ALERT_LOCK:
+            alerts = self._alerts()
+            done = [(k, a) for k, a in alerts.items() if task in (a.get('tasks') or [])]
+            if not done:
+                return
+            for k, _ in done:
+                del alerts[k]
+            self._alerts_save(alerts)
+        for k, a in done:
+            self._alert_push({'title': 'Axella: Macuse works again' if k == 'macuse' else 'Axella: %s works again' % a.get('label', k),
+                              'body': 'Failed %d run(s) since %s – back to normal.' % (
+                                  a.get('count', 1), time.strftime('%a %H:%M', time.localtime(a.get('since', now)))),
+                              'tag': 'axella-alert-' + k, 'url': '/axella/?v=runs'})
 
     def _kill(self, proc, why):
         with LOCK:

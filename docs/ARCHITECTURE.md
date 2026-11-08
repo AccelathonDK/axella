@@ -126,7 +126,9 @@ The schedule runs inside the action service – no Claude cloud tasks.
    week-ahead 30, check 5, receipts 45.
 5. *Pass rule*: OK only if the CLI exited cleanly, the run actually used Macuse (digests and checks), and wrote its
    output (a new digest JSON / an updated `p0-last-check.txt`). Otherwise *failed* → one retry after 3 min →
-   push "failed twice".
+   one push when a problem starts ("failed twice"; Macuse being down is one shared alert for all tasks), quiet while
+   it keeps failing, one reminder after 6 hours, one "works again" push when the task next runs OK
+   (`state/run-alerts.json`).
 6. *Ledger*: `state/runs.json` (status, trigger, model, tokens, summary; kept 30 days) and a readable log per run in
    `state/runs/<id>.log` (tool calls, errors, final message – sizes only for tool results, never message bodies).
 
