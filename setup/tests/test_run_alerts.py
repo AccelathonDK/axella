@@ -69,5 +69,33 @@ R3 = scheduler.Scheduler(d, d, None, boom)
 R3._alert_failed('p0-check', 'Urgent check', MAC, now=T0)
 ok('macuse' in json.load(open(p)), 'a failing push is logged, never raised')
 
+
+# the session line tells whether Macuse was configured – a run that wrote nothing because Macuse gave 0 tools says so
+
+for servers, tools, want in [([{'name': 'macuse', 'status': 'connected'}], [], True), ([], [], False)]:
+    st = {}
+    ev = json.dumps({'type': 'system', 'subtype': 'init', 'model': 'x', 'mcp_servers': servers, 'tools': tools})
+    scheduler.Scheduler._event(ev, lambda *a: None, st)
+    ok(st.get('macuse_server') is want and st.get('macuse_tools') == 0, 'session line: macuse configured = %s' % want)
+
+
+# Runs → Run now on the knowledge harvest prepares its request like the nightly run (it ran with ref None before)
+class H:
+    on, refs = True, []
+    def nightly_request(self, rid):
+        self.refs.append(rid)
+        return self.on
+R4 = scheduler.Scheduler(d, d, None, sent.append)
+R4.harvest = H()
+ok(R4.action('run_now', {'task': 'kb-harvest'}) == 'queued', 'kb-harvest Run now: queued')
+j = [x for x in R4.queue if x['task'] == 'kb-harvest']
+ok(len(j) == 1 and j[0]['ref'] == R4.harvest.refs[0] and j[0]['ref'].startswith('kb'), '… with a request ref')
+ok(R4.action('run_now', {'task': 'kb-harvest'}) == 'already queued' and len(R4.harvest.refs) == 1, 'twice: already queued, no second request')
+R4.queue.clear(); R4.harvest.on = False
+try:
+    R4.action('run_now', {'task': 'kb-harvest'}); ok(False, 'switched off: refused')
+except scheduler.Bad:
+    ok(not R4.queue, 'switched off: refused, nothing queued')
+
 print('all ok' if not fails else '%d failed' % fails)
 sys.exit(1 if fails else 0)

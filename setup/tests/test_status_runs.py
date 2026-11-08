@@ -61,5 +61,25 @@ ok('@' not in str(out['claude']), 'no address in the run rows')
 ok(by.get('Briefings', {}).get('count') == 2 and by['Briefings'].get('failed') == 1, 'briefings: 2 runs (1 failed)')
 ok(out['claude']['capped'] is False, 'not capped')
 ok(A.plural(1, 'chat') == '1 chat' and A.plural(4, 'device') == '4 devices', 'plurals')
+# a task that failed and then ran OK is fixed: not "failing", the count stays as information
+T = '2026-11-03'
+fr = [{'task': 'p0-check', 'label': 'Urgent check', 'started': T + 'T07:%02d:00+01:00' % m, 'status': 'failed'} for m in range(0, 50, 15)]
+ok(A.run_failures(fr, T) == (['Urgent check'], 4), 'still failing: named, counted')
+fr.append({'task': 'p0-check', 'label': 'Urgent check', 'started': T + 'T08:45:00+01:00', 'status': 'ok'})
+ok(A.run_failures(fr, T) == ([], 4), 'then OK: nothing failing, 4 failed earlier')
+fr.append({'task': 'kb-harvest', 'label': 'Knowledge harvest', 'started': '2026-11-02T01:30:00+01:00', 'status': 'failed'})
+ok(A.run_failures(fr, T) == ([], 4), "yesterday's failure doesn't count today")
+fr.insert(0, {'task': 'digest-morning', 'label': 'Morning digest', 'started': T + 'T09:00:00+01:00', 'status': 'failed'})
+ok(A.run_failures(fr, T) == (['Morning digest'], 5), 'list order does not matter – the newest run decides')
+
+MAC = 'Macuse (Mail/Messages/Calendar) not available – 0 tools'
+mr = [{'task': 'kb-harvest', 'label': 'Knowledge harvest', 'started': T + 'T01:30:00+01:00', 'status': 'failed', 'reason': MAC},
+      {'task': 'p0-check', 'label': 'Urgent check', 'started': T + 'T07:00:00+01:00', 'status': 'failed', 'reason': MAC}]
+ok(A.run_failures(mr, T)[0] == ['Knowledge harvest', 'Urgent check'], 'Macuse down: both failing')
+mr.append({'task': 'p0-check', 'label': 'Urgent check', 'started': T + 'T08:45:00+01:00', 'status': 'ok'})
+ok(A.run_failures(mr, T) == ([], 2), 'Macuse works again: the nightly run that failed on it alone is fixed too')
+mr.append({'task': 'digest-morning', 'label': 'Morning digest', 'started': T + 'T07:30:00+01:00', 'status': 'failed', 'reason': 'timeout'})
+ok(A.run_failures(mr, T)[0] == ['Morning digest'], '… but not a failure for another reason')
+
 print('PASS' if not fails else 'FAIL (%d)' % fails)
 sys.exit(1 if fails else 0)

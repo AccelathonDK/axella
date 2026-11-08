@@ -927,6 +927,8 @@ class Scheduler:
                 status, reason = 'failed', self.briefings.check_personal(job['ref'])
             elif not self._wrote_output(spec['kind'], start, job):
                 status, reason = 'failed', 'finished but wrote no output file'
+                if stats.get('macuse_server') and not stats.get('macuse_tools'):   # e.g. the knowledge harvest: Macuse was the cause
+                    reason = 'Macuse (Mail/Messages/Calendar) not available – 0 tools'
             elif self._bad_json(spec['kind'], start, job):
                 status, reason = 'failed', self._bad_json(spec['kind'], start, job)
             else:
@@ -1350,6 +1352,7 @@ class Scheduler:
             w('Session ready – model %s, MCP %s, %d Macuse tools' % (ev.get('model'), servers, len(mt)))
             if stats is not None:
                 stats['macuse_tools'] = len(mt)
+                stats['macuse_server'] = any(s.get('name') == 'macuse' for s in ev.get('mcp_servers') or [])
         elif t == 'assistant':
             for c in (ev.get('message') or {}).get('content') or []:
                 if c.get('type') == 'text' and c.get('text', '').strip():
@@ -1789,6 +1792,16 @@ class Scheduler:
             if task not in TASKS or TASKS[task]['kind'] in ('briefing', 'briefing-personal', 'local'):
                 raise Bad('unknown task')
             job = {'task': task, 'slot': None, 'trigger': 'manual', 'not_before': 0, 'attempt': 1, 'no_retry': True}
+            if task == 'kb-harvest':            # needs its request file, like the nightly one – without it the run has no ref
+                if not self.harvest:
+                    raise Bad('the knowledge harvest is not available')
+                with LOCK:
+                    if self._kb_busy():
+                        return 'already queued'
+                ref = 'kb' + _now().strftime('%Y%m%d%H%M%S')
+                if not self.harvest.nightly_request(ref):
+                    raise Bad('the knowledge harvest is switched off in Settings')
+                job.update(ref=ref, label='Knowledge harvest (now)')
             if task == 'return-briefing':       # "Catch me up since…": only with a checked absence (axella-actions away_catchup)
                 ab = p.get('away') if isinstance(p.get('away'), dict) else {}
                 a, b = away_mod._day(ab.get('from')), away_mod._day(ab.get('to'))

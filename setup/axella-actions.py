@@ -1258,6 +1258,22 @@ def plural(n, one, many=None):
 DIGEST_TASKS = ('digest-', 'week-ahead', 'on-demand', 'return-briefing')
 
 
+def run_failures(runs, today):
+    """(labels of the tasks whose newest run failed, number of failed runs today). A task that failed and then ran OK
+    is fixed – it no longer turns the Schedule row yellow, the count stays as information."""
+    newest, mac_tasks, mac_ok = {}, set(), ''
+    for r in sorted(runs, key=lambda r: str(r.get('started') or '')):
+        newest[r.get('task')] = r
+        if r.get('status') == 'failed' and str(r.get('reason') or '').startswith('Macuse ('):
+            mac_tasks.add(r.get('task'))
+        elif r.get('status') == 'ok' and r.get('task') in mac_tasks:
+            mac_ok = str(r.get('started') or '')     # Macuse works again – a run that failed on it alone is fixed too
+    failing = [str(r.get('label') or t) for t, r in newest.items()
+               if r.get('status') == 'failed' and str(r.get('started', ''))[:10] == today
+               and not (str(r.get('reason') or '').startswith('Macuse (') and str(r.get('started') or '') < mac_ok)]
+    return failing, sum(1 for r in runs if r.get('status') == 'failed' and str(r.get('started', ''))[:10] == today)
+
+
 def latest_digest(runs):
     """The newest digest run, whatever order the list is in (the ledger is oldest-first, the overview newest-first)."""
     ds = [r for r in runs or [] if str(r.get('task', '')).startswith(DIGEST_TASKS) and r.get('started')]
@@ -1358,7 +1374,7 @@ def system_status():
         last = latest_digest(runs)
         late = overdue_digests(ov.get('today') or [], datetime.datetime.now())
         today = datetime.date.today().isoformat()
-        failed = [r for r in runs if r.get('status') == 'failed' and str(r.get('started', ''))[:10] == today]
+        failing, failed = run_failures(runs, today)
         if not cfg.get('enabled'):
             add('Claude', 'schedule', 'Schedule', 'off', 'The Mac mini does not run the schedule', 'Settings → Schedule: "Mac mini runs the schedule"')
         else:
@@ -1370,9 +1386,11 @@ def system_status():
                 detail += ' · last digest %s (%s)' % (ago(age(iso_ts(last.get('ended') or last.get('started')))), last.get('status'))
             if late and not cur and not paused:
                 detail += ' · the %s digest hasn\'t run' % late[-1]['time']
+            if failed and not failing:
+                detail += ' · %s failed earlier today, all fine again' % plural(failed, 'run')
             add('Claude', 'schedule', 'Schedule',
-                'warn' if failed or (last and last.get('status') == 'failed') or (late and not cur and not paused) else 'ok', detail,
-                ('%s failed today – see Runs and logs' % plural(len(failed), 'run')) if failed
+                'warn' if failing or (last and last.get('status') == 'failed') or (late and not cur and not paused) else 'ok', detail,
+                ('Failing: %s – see Runs and logs' % ', '.join(failing)) if failing
                 else ('Overdue – see Runs and logs, or Run now there') if late and not cur and not paused else None,
                 last and last.get('ended'))
     except Exception as e:
