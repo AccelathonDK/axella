@@ -20,6 +20,9 @@ import { PROJECT_COLORS, fileUrl, fmtSize, projColor, projectWorld, upload } fro
 import type { Project } from '@/lib/types'
 import { cn } from '@/lib/utils'
 import { LinkedNotes } from '@/components/Notes'
+import { useNotesOwner } from '@/lib/notes'
+import { STATES, STATE_COLOR, stateOf, usePlan, type PState } from '@/lib/plan'
+import { PeopleSection, StatePill, TargetsSection, stateDetail, useProjectPlan } from '@/components/ProjectPlan'
 
 const when = (iso?: string) => iso ? new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: new Date(iso).getFullYear() === new Date().getFullYear() ? undefined : 'numeric' }) : ''
 
@@ -85,6 +88,12 @@ export function ProjectView({ id }: { id: string }) {
   const p = ax.projects.find(x => x.id === id)
   const { busy, run } = useRun()
   if (!p) return <div className="py-10 text-center text-muted-foreground">Project not found.</div>
+  return <ProjectPage p={p} busy={busy} run={run} />
+}
+
+function ProjectPage({ p, busy, run }: { p: Project } & ReturnType<typeof useRun>) {
+  const { ax, go, projectsFor, activeProjects } = useApp()
+  const plan = useProjectPlan(p)
   const items = (ax.current?.data.items || []).filter(it => projectsFor(it).some(x => x.id === p.id))
   const inDigest = new Set(items.map(i => i.id))
   const earlier = (p.items || []).filter(r => !inDigest.has(r.item_id)).slice().reverse()
@@ -101,7 +110,9 @@ export function ProjectView({ id }: { id: string }) {
           <div className="text-muted-foreground flex flex-wrap items-center gap-x-2 text-sm">
             <span className="text-ink-3 font-mono text-[13px]">#{p.tag}</span>
             <span>· {p.status === 'suggested' ? 'Suggested by ' + (p.source || 'Claude') : p.status === 'archived' ? 'Archived' + (p.archived ? ' ' + when(p.archived) : '') : 'Since ' + when(p.accepted || p.created)}</span>
+            {p.status === 'active' && stateDetail(plan.v) && <span data-state-detail="">· {stateDetail(plan.v)}</span>}
           </div>
+          {p.status === 'active' && <div className="mt-2 sm:hidden"><StatePill p={p} c={plan} /></div>}
         </div>
         <div className="flex items-center gap-1.5">
           {p.status === 'suggested' ? <>
@@ -109,7 +120,7 @@ export function ProjectView({ id }: { id: string }) {
             <Button size="sm" variant="outline" onClick={async () => { if (await run('dis', 'project_dismiss', { id: p.id }, 'Suggestion dismissed')) go({ kind: 'projects' }) }} disabled={!!busy}><X />Dismiss</Button>
           </> : p.status === 'archived'
             ? null   /* the banner below has Restore */
-            : <Button size="sm" variant="outline" onClick={() => openArchive(p.id)}><Archive />Archive</Button>}
+            : <><StatePill p={p} c={plan} className="max-sm:hidden" /><Button size="sm" variant="outline" onClick={() => openArchive(p.id)}><Archive />Archive</Button></>}
         </div>
       </div>
       {p.status === 'archived' && <div className="bg-bg-2 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg px-4 py-3 text-sm">
@@ -119,8 +130,10 @@ export function ProjectView({ id }: { id: string }) {
       </div>}
       {p.status === 'suggested' && p.why && <div className="bg-fjord-soft flex gap-2 rounded-lg px-3 py-2 text-sm"><Sparkles className="text-fjord mt-0.5 size-4 shrink-0" />{p.why}</div>}
       <Keywords p={p} />
+      <TargetsSection p={p} c={plan} />
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
         <div className="space-y-4">
+          <PeopleSection p={p} c={plan} />
           <SectionCard id="pmsg" color={color} icon={Inbox} title="Messages" sub={ax.current ? 'In ' + ax.current.meta.label + ' · matched by tag, keyword or your pins' : ''} count={items.filter(i => !ax.isHandled(i.id)).length}>
             {items.length ? [...items.filter(i => i.section !== 'file').map(i => <ItemRow key={i.id} it={i} />),
               ...groupThreads(items.filter(i => i.section === 'file')).map(g => g.length > 1 ? <ThreadRow key={g[0].id} items={g} /> : <ItemRow key={g[0].id} it={g[0]} />)]
@@ -321,7 +334,10 @@ export function ProjectsOverview() {
   const { ax, go, projectsFor } = useApp()
   const { run } = useRun()
   const items = ax.current?.data.items || []
-  const active = ax.projects.filter(p => p.status === 'active'), sugg = ax.projects.filter(p => p.status === 'suggested'), arch = ax.projects.filter(p => p.status === 'archived')
+  const owner = useNotesOwner(ax.apiOk)
+  const plan = usePlan(!!owner && ax.apiOk)
+  const [only, setOnly] = useState<PState | 'all'>('all')
+  const active = ax.projects.filter(p => p.status === 'active' && (only === 'all' || stateOf(plan, p.id) === only)), sugg = ax.projects.filter(p => p.status === 'suggested'), arch = ax.projects.filter(p => p.status === 'archived')
   const count = (p: Project) => items.filter(i => !ax.isHandled(i.id) && projectsFor(i).some(x => x.id === p.id)).length
   return (
     <div className="space-y-5" data-tour="projects">
@@ -343,11 +359,18 @@ export function ProjectsOverview() {
         </div>
       </section>}
       <section className="space-y-2">
-        <h2 className="text-muted-foreground text-xs font-semibold tracking-wide uppercase">Active</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-muted-foreground mr-2 text-xs font-semibold tracking-wide uppercase">Active</h2>
+          {plan?.enabled && <div role="group" aria-label="Filter by state" className="flex flex-wrap gap-1" data-state-filter="">
+            {(['all', ...STATES.map(x => x.id)] as const).map(k => <button key={k} type="button" aria-pressed={only === k} onClick={() => setOnly(k)}
+              className={cn('h-7 rounded-md border px-2 text-[12.5px]', only === k ? 'border-fjord text-ink' : 'border-line-strong/70 text-ink-3')}>{k === 'all' ? 'All' : STATES.find(x => x.id === k)!.label}</button>)}
+          </div>}
+        </div>
         {active.length ? <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {active.map(p => <div key={p.id} className="bg-card hover:border-line-strong relative rounded-lg border transition-colors">
             <button onClick={() => go({ kind: 'project', id: p.id })} className="block w-full p-4 pr-12 text-left">
               <div className="flex items-center gap-2"><span className="ax-diamond" style={{ color: projColor(active, p.id) }} /><span className="font-semibold">{p.name}</span>
+                {stateOf(plan, p.id) !== 'active' && <span className="font-mono text-[11px] uppercase" style={{ color: STATE_COLOR[stateOf(plan, p.id)] }}>{stateOf(plan, p.id)}</span>}
                 {count(p) > 0 && <span className="bg-fjord-soft text-fjord ml-auto rounded-sm px-1.5 font-mono text-xs leading-5 tabular-nums">{count(p)}</span>}</div>
               <div className="text-muted-foreground mt-1 text-sm">#{p.tag} · {plural((p.files || []).length + ax.documents.filter(d => d.project === p.id && !d.hidden).length, 'document')} · {plural((p.notes || []).length, 'note')} · {plural((p.links || []).length, 'link')}</div>
             </button>

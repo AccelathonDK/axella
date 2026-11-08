@@ -1,6 +1,7 @@
 import { PrivacyCard } from '@/components/Privacy'
 import { OutboundCard } from '@/components/Outbound'
 import { BlocksSettingsCard } from '@/components/Blocks'
+import { PlanSettingsCard } from '@/components/Plan'
 import { BackupCard } from '@/components/Backup'
 import { useFab } from '@/components/Tour'
 import { CalmSetupCard } from '@/components/CalmSetup'
@@ -191,7 +192,7 @@ function SettingsPageView({ area }: { area: Area }) {
       <p className="text-muted-foreground text-sm">{area.intro}</p>
     </div>
     {area.page === 'schedule' ? <SchedulePage />
-      : area.page === 'calendar' ? <><MeetingServicesCard /><BlocksSettingsCard /></>
+      : area.page === 'calendar' ? <><MeetingServicesCard /><BlocksSettingsCard /><PlanSettingsCard /></>
       : area.page === 'away' ? <OutOfOfficeCard />
       : area.page === 'calls' ? <CallsPage />
       : area.page === 'privacy' ? <><PrivacyCard /><OutboundCard /></>

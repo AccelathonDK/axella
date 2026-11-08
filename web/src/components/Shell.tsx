@@ -31,6 +31,7 @@ import { ArchiveHost, openArchive } from '@/components/Projects'
 import { KnowledgeHost, KnowledgeIcon } from '@/components/Knowledge'
 import { NOTE_KEY, NoteHost, NoteIcon, useNoteShortcut } from '@/components/Notes'
 import { openNote, useNotesOwner } from '@/lib/notes'
+import { STATE_COLOR, stateOf, usePlan } from '@/lib/plan'
 import { needsCheck, openKnowledge, useKnowledge } from '@/lib/knowledge'
 import { AskHost, AskIcon, openAsk } from '@/components/Ask'
 import { ListenBar, toggleListen, useListening } from '@/components/Listen'
@@ -113,6 +114,7 @@ function SidebarBody({ onNav }: { onNav: () => void }) {
   const { ax, view, go, activeProjects, projectsFor, inCtx, ctx } = useApp()
   const kb = useKnowledge()
   const notesOwner = useNotesOwner(ax.apiOk)
+  const plan = usePlan(!!notesOwner && ax.apiOk)
   const kbTodo = (kb || []).filter(e => e.status === 'suggested' || needsCheck(e)).length   // waiting for your OK
   const items = ax.current?.data.items || []
   const open = (f: (i: any) => boolean) => items.filter(i => !ax.isHandled(i.id) && inCtx(i) && f(i)).length
@@ -161,7 +163,9 @@ function SidebarBody({ onNav }: { onNav: () => void }) {
           <button aria-label="New project" className="text-ink-3 hover:text-ink" onClick={() => nav({ kind: 'projects' })}><Plus className="size-4" /></button>
         </div>
         <SortableProjects projects={activeProjects} render={p => <div className="group/proj relative">
-          <NavItem icon={FolderKanban} color={projColor(activeProjects, p.id)} label={p.name}
+          <NavItem icon={FolderKanban} color={projColor(activeProjects, p.id)} label={stateOf(plan, p.id) === 'active' ? p.name
+            : <span className="text-ink-3 flex items-center gap-2" data-nav-state={stateOf(plan, p.id)}><span className="min-w-0 flex-1 truncate">{p.name}</span>
+              <span className="font-mono text-[10.5px] tracking-[0.06em] uppercase" style={{ color: STATE_COLOR[stateOf(plan, p.id)] }}>{stateOf(plan, p.id)}</span></span>}
             count={items.filter(i => !ax.isHandled(i.id) && projectsFor(i).some(x => x.id === p.id)).length}
             active={view.kind === 'project' && view.id === p.id} onClick={() => nav({ kind: 'project', id: p.id })} />
           {/* desktop: a quiet ⋯ on hover (phones use the project page's Archive button) */}

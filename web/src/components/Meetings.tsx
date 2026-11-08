@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import {
-  ArrowDownRight, ArrowUpRight, CalendarCheck, CalendarDays, Meeting, Check, ChevronRight, ClipboardCopy, Copy, ExternalLink, FileText, Link2, Loader2,
+  ArrowDownRight, ArrowUpRight, CalendarCheck, CalendarDays, FolderKanban, Meeting, Check, ChevronRight, ClipboardCopy, Copy, ExternalLink, FileText, Link2, Loader2,
   Mail, MailPlus, MoreHorizontal, Paperclip, Play, Plus, Search as SearchIcon, Sparkles, Square, Trash2, Upload, UserCircle, X,
 } from '@/components/ax-icons'
 import { Badge } from '@/components/ui/badge'
@@ -23,8 +23,10 @@ import { openCompose } from '@/components/Compose'
 import { AnswersPoint, ProjectAdd, Speakers, TranscribeStatus, WaitingRecordings, useChunkRecorder } from '@/components/MeetingsFinish'
 import { get, post } from '@/lib/api'
 import { useApp } from '@/lib/app'
+import { useNotesOwner } from '@/lib/notes'
+import { usePlan, type Plan } from '@/lib/plan'
 import {
-  agendaText, fileUrl, fmtWhen, joinLink, prepForEvent, prepMarkdown, reloadPreps, startFromEvent, startManual, uploadMaterial, uploadTranscript, usePreps,
+  agendaText, fileUrl, fmtWhen, joinLink, linkEventToProject, prepForEvent, prepMarkdown, reloadPreps, startFromEvent, startManual, uploadMaterial, uploadTranscript, usePreps,
   type CalEv, type Card as AssistCard, type MeetingCtx, type Outcome, type Outcomes, type Point, type Prep, type PrepSummary,
 } from '@/lib/meetings'
 import { rowsOf, todayRows, type Row } from '@/lib/meetingRows'
@@ -108,6 +110,47 @@ export function PrepareButton({ e, onGo }: { e: CalEv; onGo?: () => void }) {
     setBusy(true)
     try { const id = await startFromEvent(e); onGo?.(); go({ kind: 'meeting', id }) } catch (x: any) { toast.error('Not started: ' + x.message) } finally { setBusy(false) }
   }}>{busy ? <Loader2 className="animate-spin" /> : <MeetingIcon />}Prepare</Button>
+}
+
+/** Calendar → an event: which project the meeting belongs to (through its prep – made on the first link). */
+export function EventProject({ e }: { e: CalEv }) {
+  const { ax } = useApp()
+  const { preps, owner } = usePreps()
+  const [busy, setBusy] = useState(false)
+  if (!ax.apiOk || !owner || e.all_day || !preps) return null
+  const cur = prepForEvent(preps, e)?.project || ''
+  const act = ax.projects.filter(p => p.status === 'active')
+  if (!act.length) return null
+  return <label className="flex items-center gap-2 text-sm" data-event-project="">
+    <FolderKanban className="text-ink-3 size-4" /><span className="text-ink-3">Project</span>
+    <NativeSelect aria-label="Project" value={cur} disabled={busy} className="h-8 w-auto max-w-56 text-[13px]" onChange={async ev => {
+      const pid = ev.target.value || null
+      setBusy(true)
+      try { await linkEventToProject(e, pid); toast(pid ? `Linked to ${act.find(x => x.id === pid)?.name}` : 'No project') }
+      catch (x: any) { toast.error('Not linked: ' + x.message) } finally { setBusy(false) }
+    }}><option value="">No project</option>{act.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</NativeSelect>
+    {busy && <Loader2 className="text-ink-3 size-4 animate-spin" />}
+  </label>
+}
+
+/** Project page → Link a meeting…: the coming 30 days' meetings, not linked to a project yet */
+function LinkMeeting({ project, onDone }: { project: { id: string; name: string }; onDone: () => void }) {
+  const { preps } = usePreps()
+  const { events, err } = useUpcoming(30)
+  const [busy, setBusy] = useState<string | null>(null)
+  const list = (events || []).filter(e => !e.all_day && !prepForEvent(preps, e)?.project)
+  return <div className="space-y-1 border-b px-4 py-3" data-link-meeting="">
+    <div className="text-ink-3 text-[12.5px]">The next 30 days – pick the meeting that belongs to {project.name}:</div>
+    {!events && <p className="text-ink-3 flex items-center gap-2 text-sm"><Loader2 className="size-4 animate-spin" />Reading your calendar…</p>}
+    {err && <p className="text-ink-3 text-sm">{err}</p>}
+    {events && !list.length && !err && <p className="text-ink-3 text-sm">No meetings without a project in the next 30 days.</p>}
+    <div className="max-h-72 overflow-y-auto">{list.slice(0, 40).map(e => <button key={e.id + e.start} type="button" disabled={!!busy}
+      className="hover:bg-bg-2 flex min-h-11 w-full items-center gap-3 rounded-md px-2 text-left text-sm" data-link-event={e.id}
+      onClick={async () => { setBusy(e.id); try { await linkEventToProject(e, project.id); toast(`${e.title} linked to ${project.name}`); onDone() } catch (x: any) { toast.error('Not linked: ' + x.message) } finally { setBusy(null) } }}>
+      <span className="text-ink-3 w-28 shrink-0 font-mono text-[12.5px]">{new Date(e.start).toLocaleString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+      <span className="min-w-0 flex-1 truncate">{e.title}</span>{busy === e.id && <Loader2 className="size-4 animate-spin" />}</button>)}</div>
+    <Button size="pill" variant="ghost" onClick={onDone}>Close</Button>
+  </div>
 }
 
 /* ---------- events of the next days, for the Meetings page and the Today card ---------- */
@@ -368,7 +411,10 @@ function Header({ prep, d, set, projects, onLinked }: { prep: Prep; d: Draft; se
   const linked = !!prep.event
   const [pick, setPick] = useState(false)
   const [armed, setArmed] = useState(false)
-  const suggest = !d.project ? suggestProject(projects, d.title, prep.attendees) : null
+  const { ax } = useApp()
+  const owner = useNotesOwner(ax.apiOk)
+  const plan = usePlan(!!owner && ax.apiOk)
+  const suggest = !d.project ? suggestProject(projects, d.title, prep.attendees, plan) : null
   async function unlink() {
     if (!armed) { setArmed(true); setTimeout(() => setArmed(false), 3000); return }
     try { await post('meeting_update', { id: prep.id, title: d.title, event: null }); toast('No longer linked to the calendar'); reloadPreps(); onLinked() } catch (e: any) { toast.error(e.message) }
@@ -405,10 +451,13 @@ function Header({ prep, d, set, projects, onLinked }: { prep: Prep; d: Draft; se
   </Card>
 }
 
-/** A project that fits the meeting: its name, tag or a keyword in the title, or an attendee among its senders. */
-function suggestProject(projects: Project[], title: string, people: { email: string }[]) {
+/** A project that fits the meeting: its name, tag or a keyword in the title, or an attendee among its senders – or,
+    with Targets and Now · Next · Later, among the people on the project. */
+function suggestProject(projects: Project[], title: string, people: { email: string }[], plan?: Plan | null) {
   const t = title.toLowerCase()
   const mails = people.map(p => p.email.toLowerCase()).filter(Boolean)
+  const byPeople = plan && mails.length ? projects.find(p => (plan.projects[p.id]?.people || []).some(k => mails.includes(k))) : null
+  if (byPeople) return byPeople
   return projects.find(p => [p.name, p.tag, ...(p.keywords || [])].some(k => k && k.length > 3 && t.includes(k.toLowerCase()))
     || (p.senders || []).some(s => mails.some(m => m === s.toLowerCase() || (s.startsWith('@') && m.endsWith(s.toLowerCase()))))) || null
 }
@@ -478,16 +527,19 @@ function AiChoice({ prep, ai, info, onChange }: { prep: Prep; ai: 'none' | 'own'
 export function ProjectMeetings({ project }: { project: { id: string; name: string } }) {
   const { ax } = useApp()
   const { preps, owner } = usePreps()
+  const [linking, setLinking] = useState(false)
   if (!ax.apiOk || !owner || !preps) return null
   const list = preps.filter(p => p.project === project.id)
   return <Card className="overflow-hidden" data-project-meetings="">
-    <div className="flex items-center gap-3 border-b px-4 py-3">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b px-4 py-3">
       <span className="bg-bg-2 flex size-10 items-center justify-center rounded-md"><MeetingIcon className="size-5" /></span>
-      <span className="text-[15px] font-semibold">Meetings</span>
-      <Button size="pill" variant="ghost" className="ml-auto" onClick={() => openNewPrep({ title: '', project: project.id })}><Plus />New prep</Button>
+      <span className="mr-auto text-[15px] font-semibold">Meetings</span>
+      <Button size="pill" variant="outline" onClick={() => setLinking(l => !l)} data-link-meeting-btn=""><Link2 />Link a meeting…</Button>
+      <Button size="pill" variant="ghost" onClick={() => openNewPrep({ title: '', project: project.id })}><Plus />New prep</Button>
     </div>
+    {linking && <LinkMeeting project={project} onDone={() => setLinking(false)} />}
     {list.length ? <div className="divide-y">{list.map(p => <PrepLine key={p.id} p={p} />)}</div>
-      : <p className="text-ink-3 px-4 py-3 text-sm">No meeting preps for {project.name} yet – pick the project on a prep, or start one here.</p>}
+      : <p className="text-ink-3 px-4 py-3 text-sm">No meetings for {project.name} yet – link one from your calendar, or start a prep here.</p>}
   </Card>
 }
 

@@ -12,24 +12,30 @@ export function projectWorld(p: Project): 'work' | 'private' | null {
   return profile().workplaces.some(w => [w.id, w.name].some(x => x && names.includes(x.toLowerCase()))) ? 'work' : null
 }
 
+/** Axella's own lines in a digest (bills, subscriptions, renewals, keep in touch, hold a block, the plan): its own
+    wording, not something anyone wrote to you – a project only when you pin it. */
+export const ownLine = (it: Item) => /-p3-(bills|subscriptions|renewals|keepintouch|focus|plan|check\d+|done\d+)$/.test(it.id)
+
 /** Projects an item belongs to. Pinned by hand always wins; otherwise a private item never gets a work project, and a
     calendar note (free slots, conflicts – no single event) gets no project at all. */
 export function projectsOf(it: Item, projects: Project[], ctx?: 'work' | 'private'): Project[] {
   const tagged = ([] as string[]).concat(it.project || []).map(s => s.toLowerCase().replace(/^#/, ''))
-  const hay = [it.headline, it.detail, it.subject, it.file_to, it.from?.name].filter(Boolean).join(' ')
+  // keywords match what someone wrote to you (headline, subject, sender), not the longer detail text where words turn up by accident
+  const short = [it.headline, it.subject, it.from?.name].filter(Boolean).join(' ')
+  const hay = [short, it.detail, it.file_to].filter(Boolean).join(' ')
   const sk = senderKey(it)
   const calNote = it.section === 'cal' && !it.event
   return projects.filter(p => {
     if (p.status !== 'active') return false
     if (p.hidden_items?.includes(it.id)) return false
     if (p.items?.some(r => r.item_id === it.id)) return true
-    if (calNote) return false
+    if (calNote || ownLine(it)) return false
     const pw = projectWorld(p)
     if (ctx && pw && ctx !== pw) return false                  // private item ↛ work project, and the other way round
     if (tagged.includes(p.id.toLowerCase()) || tagged.includes(p.tag)) return true
     if (sk && p.senders?.map(s => s.toLowerCase()).includes(sk)) return true
     if (new RegExp('#' + esc(p.tag) + '\\b', 'i').test(hay)) return true
-    return (p.keywords || []).some(k => k.length > 2 && new RegExp('(^|[^\\p{L}\\d])' + esc(k) + '($|[^\\p{L}\\d])', 'iu').test(hay))
+    return (p.keywords || []).some(k => k.length > 2 && new RegExp('(^|[^\\p{L}\\d])' + esc(k) + '($|[^\\p{L}\\d])', 'iu').test(short))
   })
 }
 export const fileUrl = (p: Project, f: { id: string }) => `api/project_file?p=${encodeURIComponent(p.id)}&f=${encodeURIComponent(f.id)}`

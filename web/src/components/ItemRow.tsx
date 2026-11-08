@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
 import { toast } from 'sonner'
 import { FocusButtons } from '@/components/Blocks'
+import { PlanButton } from '@/components/Plan'
 import { renewalsNext } from '@/components/Receipts'
 import { AlarmClock, ArrowDownRight, Briefcase, CalendarCheck, CalendarPlus, Check, ClipboardCopy, ExternalLink, FolderInput, Hash, Home,
   BellOff, ChevronDown, Eye, Linkedin, Recurring, Star, Loader2, Paperclip, Mail, MessageCircle, MoreHorizontal, PencilLine, Reply, SquarePlus, Trash2, Undo2, UserCircle, axi } from '@/components/ax-icons'
@@ -120,8 +121,8 @@ type Leave = { kind: 'done' | 'file' | 'snooze' | 'trash'; label: string }
 
 /* iPhone swipe (design system Motion: settle, no bounce). Right = Done (Filing: move to the suggested folder).
    Left = Tomorrow; a long left swipe = move to the suggested folder. Delete is never a swipe – it stays two taps. */
-type Hint = { side: 'right' | 'left'; label: string; icon: any; tone: 'done' | 'snooze' | 'file'; armed: boolean }
-function useRowSwipe(api: { current: RowApi }) {
+export type Hint = { side: 'right' | 'left'; label: string; icon: any; tone: 'done' | 'snooze' | 'file'; armed: boolean }
+export function useRowSwipe(api: { current: RowApi }) {
   const [dx, setDx] = useState(0)
   const [drag, setDrag] = useState(false)
   const st = useRef({ x: 0, y: 0, id: -1, on: false, w: 1, dx: 0 })
@@ -129,7 +130,7 @@ function useRowSwipe(api: { current: RowApi }) {
     const a = api.current
     const right = a.done ? { fn: a.done, label: 'Done', icon: Check, tone: 'done' as const } : a.file ? { fn: a.file, label: 'Move to ' + a.fileLabel, icon: FolderInput, tone: 'file' as const } : null
     const fileLeft = a.file && right?.tone !== 'file' ? { fn: a.file, label: 'Move to ' + a.fileLabel, icon: FolderInput, tone: 'file' as const } : null
-    const snooze = a.snooze ? { fn: a.snooze, label: 'Tomorrow 07:00', icon: AlarmClock, tone: 'snooze' as const } : null
+    const snooze = a.snooze ? { fn: a.snooze, label: a.snoozeLabel || 'Tomorrow 07:00', icon: AlarmClock, tone: 'snooze' as const } : null
     const left = -d > w * 0.55 && snooze && fileLeft ? fileLeft : snooze || fileLeft
     return d > 0 ? right && { ...right, side: 'right' as const } : left && { ...left, side: 'left' as const }
   }
@@ -163,7 +164,7 @@ function useRowSwipe(api: { current: RowApi }) {
   const hint: Hint | null = p && Math.abs(dx) > 4 ? { side: p.side, label: p.label, icon: p.icon, tone: p.tone, armed: Math.abs(dx) >= 80 } : null
   return { dx, hint, handlers, style: dx || drag ? { transform: `translateX(${dx}px)`, transition: drag ? 'none' : 'transform 220ms cubic-bezier(.2,.8,.2,1)' } : undefined }
 }
-function SwipeHint({ h, dx }: { h: Hint; dx: number }) {
+export function SwipeHint({ h, dx }: { h: Hint; dx: number }) {
   const I = h.icon
   return <div aria-hidden className={cn('absolute inset-0 flex items-center px-5 text-sm font-medium',
     h.side === 'right' ? 'justify-start' : 'justify-end',
@@ -386,6 +387,7 @@ export function ActionBar({ it, handled, onCal, onPreview, onLeave, api, draftTe
   if (it.link === 'bills') vis.push(<Button key="bills" size="pill" variant="outline" onClick={() => go({ kind: 'todo', tab: 'tasks', only: 'bills' })}><Recurring />Open Bills</Button>)
   if (it.link === 'person' && it.person) vis.push(<Button key="person" size="pill" variant="outline" onClick={() => go({ kind: 'person', id: it.person! })}><UserCircle />Open their page</Button>)
   if (it.link === 'focus' && !handled) vis.push(<FocusButtons key="focus" it={it} />)
+  if (it.link === 'plan' && !handled) vis.push(<PlanButton key="plan" />)
   if (it.link === 'renewals') vis.push(<Button key="renewals" size="pill" variant="outline" onClick={() => { renewalsNext.open = true; go({ kind: 'receipts' }) }}><Recurring />Open Renewals</Button>)
   if (it.link === 'subscriptions') vis.push(<Button key="subs" size="pill" variant="outline" onClick={() => { subsNext.open = true; go({ kind: 'receipts' }) }}><Recurring />Open Subscriptions</Button>)
   // only a real suggestion (Axella checked it isn't in the calendar yet) gets the visible button

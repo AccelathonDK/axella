@@ -103,6 +103,13 @@ export async function startFromEvent(e: CalEv): Promise<string> {
   await reloadPreps()
   return r.result.id
 }
+/** a meeting belongs to a project through its prep: link (or unlink) the event's prep, making the prep if there is none */
+export async function linkEventToProject(e: CalEv, project: string | null): Promise<string> {
+  const id = await startFromEvent(e)
+  await post('meeting_update', { id, project })
+  await reloadPreps()
+  return id
+}
 export async function startManual(title: string, start?: string | null, extra: Record<string, unknown> = {}): Promise<string> {
   const r = await post<{ result: { id: string } }>('meeting_add', { title, start: start || null, ...extra })
   await reloadPreps()

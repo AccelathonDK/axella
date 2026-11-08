@@ -33,10 +33,11 @@ json.dump({'paths': {'/axella/': []}}, open(A.ACCESS_FILE, 'w'))
 A.config = lambda: {}
 ok(A.owner_logins() == set(), 'nobody on the list: nobody is owner (fail closed)')
 ok({'contact_add', 'contact_delete', 'cal_update', 'cal_delete', 'cal_restore'} <= A.OWNER_ONLY, 'edits are owner-only actions')
-ok({a for a in A.OWNER_ONLY if not a.startswith(('meeting_', 'birthday_', 'trip_', 'project_', 'renewal_', 'block_settings', 'block_never', 'block_not_now', 'away_', 'backup_', 'teach_', 'rule_', 'suggest_', 'calm_setup_', 'note_')) and a not in ('person_note', 'keep_set')} <= A.SLOW_ACTIONS,
+ok({a for a in A.OWNER_ONLY if not a.startswith(('meeting_', 'birthday_', 'trip_', 'project_', 'renewal_', 'block_settings', 'block_never', 'block_not_now', 'away_', 'backup_', 'teach_', 'rule_', 'suggest_', 'calm_setup_', 'note_', 'plan_')) and a not in ('person_note', 'keep_set')} <= A.SLOW_ACTIONS,
    '… contacts and calendar run in the background queue')
 ok({'person_note', 'keep_set'} <= A.OWNER_ONLY, 'People notes and keep in touch: owner only')
 ok('birthday_show' in A.OWNER_ONLY, '"Show birthday": owner only')
+ok(set(A.PLAN_ACTIONS) <= A.OWNER_ONLY and 'plan_hold' in A.SLOW_ACTIONS, 'Targets, people on a project and the day plan: owner only; Hold runs in the background')
 ok({'trip_scan', 'trip_confirm', 'trip_remove'} <= A.OWNER_ONLY, 'trips: owner only')
 ok(A.PROJECT_MAIL_ACTIONS <= A.OWNER_ONLY, 'Projects → Scan mail, To sort, Read with Claude: owner only')
 ok({'meeting_add', 'meeting_update', 'meeting_delete', 'meeting_assist', 'meeting_upload', 'meeting_url_add'} <= A.OWNER_ONLY, 'meeting prep is owner-only')

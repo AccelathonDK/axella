@@ -149,5 +149,28 @@ ok(A.pending_invites(fresh=True)['invites'] == [], 'a hidden contact\'s invitati
 for name in ('SEND_NEW_SCRIPT', 'EVENT_SCRIPT'):
     bad = [l for l in getattr(A, name).split('\n') if l.count('"') % 2]
     ok(not bad, name + ': quotes balanced on every line')
+
+# a forwarded invite: ORGANIZER with a quoted SENT-BY="mailto:…" (a colon inside a quoted parameter)
+FWD = ICS.replace('ORGANIZER;CN=Lee Chen:mailto:lee@acme.example',
+                  'ORGANIZER;CN="Robin Example";SENT-BY="mailto:alex.old@example.net":mailto:robin@example.org')
+ev = invites.parse(FWD)
+ok(ev['organizer'] == {'email': 'robin@example.org', 'name': 'Robin Example'}, 'a quoted SENT-BY="mailto:…" no longer swallows the organizer address')
+ok(invites._line('ATTENDEE;CN="Team: Sales";PARTSTAT=ACCEPTED:mailto:kim@example.net')[2] == 'mailto:kim@example.net', 'a colon inside a quoted name too')
+calls.clear()
+A.invite_load = lambda account, mid: invites.parse(FWD)
+A.invite_respond({'account': 'iCloud', 'message_id': '<m2@x>', 'response': 'declined', 'confirm': 'send', 'item_id': 'i2'})
+send = next(c for c in calls if c[0] is A.SEND_NEW_SCRIPT)
+ok(send[1][1] == 'robin@example.org', '… and the answer goes to that organizer')
+
+import time as _t  # noqa: E402
+t0 = _t.time()
+ok(invites._line('X' + ';A=b,c' * 40 + '"') is None and _t.time() - t0 < 0.5, 'a crafted line (40 comma parameters, no colon) fails fast')
+t0 = _t.time()
+ok(invites._line('X' + ';A=b,c' * 5000 + '"') is None and _t.time() - t0 < 0.5, '… also a very long one')
+long_desc = 'DESCRIPTION:' + 'x' * 6000 + ' https://teams.example.com/l/meetup-join/abc'
+ok(invites._line(long_desc)[2].endswith('meetup-join/abc'), 'a long DESCRIPTION is still read whole (its join link)')
+ok(invites._line('CATEGORIES:a,b') == ('CATEGORIES', {}, 'a,b') and invites._line('DTSTART;TZID=Europe/Copenhagen:20261105T090000')[1] == {'TZID': 'Europe/Copenhagen'},
+   'ordinary lines still read')
+
 print('PASS' if not fails else 'FAIL (%d)' % fails)
 sys.exit(1 if fails else 0)

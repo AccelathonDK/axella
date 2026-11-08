@@ -1612,7 +1612,16 @@ def outbound(days=7):
                       'asks': tally_sum('notes_asks', cutoff.date().isoformat())}}
 
 
-def mail_search(q, limit=40):
+def mail_search(q, limit=40, before=None):
+    """before: 'YYYY-MM-DD' or an ISO time – only mail received before it ("Show older", "Before a date")."""
+    ts = None
+    if before:
+        try:
+            b = str(before)[:32].replace('Z', '+00:00')
+            d = datetime.datetime.fromisoformat(b) if 'T' in b else datetime.datetime.combine(datetime.date.fromisoformat(b[:10]), datetime.time())
+            ts = (d if d.tzinfo else d.astimezone()).timestamp()
+        except ValueError:
+            return {'items': [], 'error': 'give the date as YYYY-MM-DD'}
     accs = config().get('accounts', {})
     own = [a.get('address') for a in accs.values() if isinstance(a, dict)]
     try:
@@ -1622,7 +1631,7 @@ def mail_search(q, limit=40):
     if not names:
         return {'items': [], 'error': "Mail on the Mac mini isn't answering – try again in a moment"}
     try:
-        found = mailsearch.search(q, names, own, limit=limit, classify=mail_privacy)
+        found = mailsearch.search(q, names, own, limit=limit, classify=mail_privacy, before=ts)
         for f in found:
             flag = SAFETY.flag_of({'message_id': f.get('message_id')}) if isinstance(f, dict) and f.get('message_id') else None
             if flag:
@@ -3168,6 +3177,10 @@ def push_watcher():
                     except Exception as e:
                         sys.stderr.write('%s blocks line: %s\n' % (now_iso(), str(e)[:200]))
                     try:
+                        _plan_digest(n)            # the focus question (morning), this week's focus (Sunday), the monthly check (Friday)
+                    except Exception as e:
+                        sys.stderr.write('%s plan line: %s\n' % (now_iso(), str(e)[:200]))
+                    try:
                         RENEW.add_to_digest(DIGESTS_DIR, n)   # one line when a renewal reaches its lead time
                     except Exception as e:
                         sys.stderr.write('%s renewals line: %s\n' % (now_iso(), str(e)[:200]))
@@ -3492,6 +3505,8 @@ def do_action(action, p):
         return away_action(action, p)
     if action.startswith('block_'):
         return block_action(action, p)
+    if action in PLAN_ACTIONS:
+        return plan_action(action, p)
     if action.startswith('project_'):
         try:
             return PROJ.action(action, p)
@@ -4290,13 +4305,17 @@ def block_action(action, p):
             import calendar_view as _cv
             off = datetime.datetime.fromisoformat(day + 'T' + s).astimezone().strftime('%z')   # that day's offset (summer/winter time)
             off = off[:3] + ':' + off[3:]
-            p['title'] = st.get('name') or 'Focus'
+            name = st.get('name') or 'Focus'
+            if p.get('_plan_label'):                   # Hold on a Now · Next · Later item: "Focus: <the item>"
+                name = '%s: %s' % (name, p['_plan_label'])
+            p['title'] = name
             r = _cv.edit(RUNNER.mcp_file(), config().get('calendars') or [], 'cal_add',
-                         {'title': st.get('name') or 'Focus', 'calendar': cal, 'start': '%sT%s:00%s' % (day, s, off), 'end': '%sT%s:00%s' % (day, e, off),
+                         {'title': name, 'calendar': cal, 'start': '%sT%s:00%s' % (day, s, off), 'end': '%sT%s:00%s' % (day, e, off),
                           'notes': 'Held by Axella – your own time to work.'}, os.path.join(BACKUP_DIR, 'events'),
                          cache_file=os.path.join(STATE_DIR, 'macuse-calendar-tools.json'))
-            BLOCKS.mark(day, 'shown')
-            return dict(r or {}, calendar=cal)
+            if not p.get('_plan_label'):
+                BLOCKS.mark(day, 'shown')
+            return dict(r or {}, calendar=cal, date=day, start=s)
     except _blocks.Bad as e:
         raise Bad(str(e))
     except (TypeError, ValueError):
@@ -4306,6 +4325,274 @@ def block_action(action, p):
             raise Bad(str(e))
         raise
     raise Bad('unknown action')
+
+
+import planner as _planner  # noqa: E402  (Targets and Now · Next · Later – rules only, owner only)
+PLAN = _planner.Planner(STATE_DIR)
+PLAN_ACTIONS = ('project_state', 'project_person_add', 'project_person_update', 'project_person_remove', 'project_person_not',
+                'project_target_add', 'project_target_update', 'project_target_delete', 'project_target_signal_not',
+                'project_entry_add', 'project_entry_update', 'project_entry_delete', 'project_entry_reorder',
+                'plan_settings', 'plan_focus', 'plan_none', 'plan_item', 'plan_swap', 'plan_suggestion', 'plan_heads_up',
+                'plan_check', 'plan_hold')
+
+
+def _plan_projects():
+    """Projects for the planner: their world decided as everywhere (work / private)."""
+    out = []
+    for x in PROJ.load()['projects']:
+        if x.get('status') in ('active', 'archived', 'suggested'):
+            w = _project_world(x)
+            out.append(dict(x, ctx=w or x.get('ctx')))
+    return out
+
+
+def _plan_ids(active_only=False):
+    return [x['id'] for x in PROJ.load()['projects'] if x.get('status') == 'active' or (not active_only and x.get('status') == 'archived')]
+
+
+def plan_action(action, p):
+    if action == 'plan_hold':                  # Hold: one busy block of your own, through block_hold (backup, undo)
+        lab = re.sub(r'[\x00-\x1f\x7f]', ' ', str(p.get('label') or '')).strip()[:80]
+        return block_action('block_hold', dict(p, _plan_label=lab or 'your plan'))
+    if str(p.get('key') or '') and action.startswith('project_person_'):
+        p['key'] = _people._key(p['key']) or str(p['key'])
+    try:
+        r = PLAN.action(action, p, _plan_ids(active_only=action in ('plan_focus',)))
+    except _planner.Bad as e:
+        raise Bad(str(e))
+    p['title'] = {'project_state': 'Project state', 'plan_focus': 'Plan my day', 'plan_none': 'None today'}.get(action, 'Targets and plan')
+    return r
+
+
+def _plan_recent(days=21):
+    """Who wrote lately: {person key: {"at", "name"}} from the digests (times and names only)."""
+    since = (datetime.date.today() - datetime.timedelta(days=days)).isoformat()
+    out = {}
+    try:
+        with STORE._db() as db:
+            for r in db.execute("SELECT from_name, from_address, first_seen, generated FROM item_latest WHERE substr(generated,1,10) >= ?", (since,)):
+                k = _people._key(r['from_address'])
+                at = r['first_seen'] or r['generated']
+                if k and (k not in out or str(at) > out[k]['at']):
+                    out[k] = {'at': str(at), 'name': r['from_name'] or ''}
+    except Exception as e:
+        sys.stderr.write('plan recent: %s\n' % str(e)[:200])
+    return out
+
+
+def _plan_closed(d):
+    """Refs a Waiting project points at that are closed now: done tasks, handled Waiting items."""
+    refs = {(e.get('waiting_for') or {}).get('ref') for e in d['projects'].values() if (e.get('waiting_for') or {}).get('kind') in ('task', 'item')}
+    refs.discard(None)
+    if not refs:
+        return set()
+    out = {t.get('id') for t in load_json(TASKS_FILE, []) if isinstance(t, dict) and t.get('status') == 'done' and t.get('id') in refs}
+    try:
+        out |= {r for r in refs if r in _people_index().handled}
+    except Exception:
+        pass
+    return out
+
+
+def _plan_activity():
+    """The newest thing that happened on each project: mails added to it, pins, notes, links, files."""
+    out = {}
+    try:
+        pm = PSCAN.load().get('projects') or {}
+    except Exception:
+        pm = {}
+    for x in PROJ.load()['projects']:
+        ts = [str(m.get('date') or m.get('added') or '') for m in ((pm.get(x['id']) or {}).get('added') or {}).values()]
+        ts += [str(i.get('added') or '') for i in x.get('items') or []] + [str(n.get('created') or '') for n in x.get('notes') or []]
+        ts += [str(n.get('created') or '') for n in x.get('links') or []] + [str(f.get('uploaded') or '') for f in x.get('files') or []]
+        ts = [t for t in ts if t[:4].isdigit()]
+        if ts:
+            out[x['id']] = max(ts)
+    return out
+
+
+def _plan_extras(today):
+    """What is due anyway: a reply sprint, tasks due today or overdue (not a project step)."""
+    out = []
+    try:
+        n = len(sprint_view().get('items') or [])
+        if n:
+            out.append({'key': 'sprint:%s' % today.isoformat(), 'title': '%d quick repl%s' % (n, 'y' if n == 1 else 'ies'), 'mins': max(10, min(30, 5 * n)),
+                        'world': 'work' if today.weekday() < 5 else 'private', 'project': 'Reply sprint', 'first': True, 'link': 'sprint'})
+    except Exception:
+        pass
+    for t in load_json(TASKS_FILE, []):
+        if isinstance(t, dict) and t.get('status') != 'done' and t.get('due') and str(t['due'])[:10] <= today.isoformat() and len(out) < 4:
+            out.append({'key': 'task:%s' % t.get('id'), 'title': str(t.get('text') or '')[:120], 'mins': _planner.TASK_MINS,
+                        'world': 'work' if today.weekday() < 5 else 'private', 'project': 'Due today', 'link': 'task'})
+    return out
+
+
+def _plan_events(a, b):
+    try:
+        return _block_events(a, b), None
+    except Exception as e:
+        return [], str(e)[:160]
+
+
+def plan_view(today=None, now=None):
+    """Today: the state suggestions, the focus question and Now · Next · Later. Owner only, never sent anywhere."""
+    today = today or datetime.date.today()
+    now = now or datetime.datetime.now()
+    d = PLAN.load()
+    projects = _plan_projects()
+    act = [x for x in projects if x.get('status') == 'active']
+    light = {}
+    for pid, e in d['projects'].items():
+        light[pid] = {'state': e.get('state', 'active'), 'since': e.get('since'), 'waiting_for': e.get('waiting_for'), 'paused_until': e.get('paused_until'),
+                      'people': [x.get('key') for x in e.get('people') or [] if x.get('key')],
+                      'targets': [{'id': t['id'], 'kind': t.get('kind'), 'title': t.get('title'), 'status': t.get('status'), 'due': _planner._target_due(t),
+                                   'progress': _planner.progress(t)} for t in e.get('targets') or []]}
+    out = {'settings': d['settings'], 'projects': light, 'enabled': bool(d['settings'].get('enabled', True))}
+    if not out['enabled']:
+        return out
+    sug = _planner.state_suggestions(d, act, today, _plan_recent(), _plan_closed(d), _plan_activity())
+    mon = today - datetime.timedelta(days=today.weekday())
+    ev, err = _plan_events(today, mon + datetime.timedelta(days=7))
+    wh = _work_hours()
+    week_slots = []
+    for i in range(1, 8):
+        x = today + datetime.timedelta(days=i)
+        week_slots.append((x, sorted(sum([_planner.free_slots(ev, x, _planner.day_window(x, w, wh), int(d['settings'].get('buffer', 10)))
+                                          for w in ('work', 'private')], []))))
+    dd = d['days'].get(today.isoformat()) or {}
+    free = _planner.plan_day(d, act, today, ev, wh, now, focus=[])['free']
+    q = _planner.suggest_focus(d, act, today, free)
+    plan = _planner.plan_day(d, act, today, ev, wh, now, _plan_extras(today), week_slots)
+    if plan['focus']:
+        plan['later'] = plan['later'] + _planner.other_later(d, act, plan['focus'])
+    out.update(suggestions=sug, question=q, chosen=bool(dd.get('focus')) or bool(dd.get('none')), plan=plan, calendar_error=err,
+               checks=_planner.checks_due(d, act, today) if today.weekday() == 4 else [])
+    return out
+
+
+def plan_week_view(whole=False, today=None, now=None):
+    today = today or datetime.date.today()
+    d = PLAN.load()
+    if not d['settings'].get('enabled', True):
+        return {'enabled': False, 'days': []}
+    act = [x for x in _plan_projects() if x.get('status') == 'active']
+    mon = today - datetime.timedelta(days=today.weekday())
+    ev, err = _plan_events(mon, mon + datetime.timedelta(days=14))
+    w = _planner.week(d, act, today, ev, _work_hours(), now or datetime.datetime.now(), _plan_extras(today), whole)
+    return dict(w, enabled=True, calendar_error=err)
+
+
+def _plan_person(key, ppl, idx, items, proms):
+    """One person on a project: who (from Contacts when they're there), last contact, what's open – no message text."""
+    k = _people._key(key) or key
+    pp = next((x for x in ppl if k in _people.keys_of(x)), None) or _people.find(ppl, key)
+    lv = mail_privacy([k])[0] if '@' in k else None
+    if lv == 'hidden' or (pp and pp.get('hidden')):
+        return None
+    emails = sorted({str(e).lower() for e in ((pp or {}).get('emails') or []) + ((pp or {}).get('mail_only') or [])}) if pp else ([k] if '@' in k else [])
+    phones = [x.get('value') if isinstance(x, dict) else x for x in (pp or {}).get('phones') or []] if pp else ([] if '@' in k else [k])
+    keys = _people.keys_of(pp) if pp else {k}
+    last = idx.last_contact(pp) if pp else {}
+    if not pp:
+        for r in idx.by_key.get(k, []):
+            at = r['first_seen'] or r['generated']
+            if at and str(at) > last.get(r['channel'] or 'mail', ''):
+                last[r['channel'] or 'mail'] = str(at)
+    mine = lambda i: _people._key(((i.get('from') or {}) if isinstance(i.get('from'), dict) else {}).get('address')) in keys
+    return {'pid': _people.pid_of(pp) if pp else 'mail:' + k if '@' in k else None, 'name': (pp or {}).get('name'), 'emails': emails[:4], 'phones': phones[:3],
+            'private': bool((pp or {}).get('private')) or lv == 'private', 'last': last,
+            'to_answer': sum(1 for i in items if i.get('section') in _people.ANSWER and mine(i) and i.get('id') not in idx.handled),
+            'waiting': sum(1 for i in items if i.get('section') == 'wait' and mine(i) and i.get('id') not in idx.handled),
+            'promises': sum(1 for x in proms if x.get('status') in ('suggested', 'added') and _people._key((x.get('person') or {}).get('address')) in keys)}
+
+
+def project_plan_view(pid):
+    """A project page's Targets and People. Owner only, never sent anywhere."""
+    pr = _project_of(pid)
+    d = PLAN.load()
+    e = d['projects'].get(pid) or {'state': 'active', 'people': [], 'people_not': [], 'auto_removed': [], 'targets': []}
+    own = own_addresses()
+    try:
+        notes = [NOTES.view(x['id']) for x in NOTES.list(None, None, pid)][:50]
+    except Exception:
+        notes = []
+    stored = [dict(x) for x in e.get('people') or []]
+    auto = _planner.auto_people(pid, pr, e, MEET.overview(), notes, own)
+    mails = list(((PSCAN.load().get('projects') or {}).get(pid) or {}).get('added', {}).values())
+    sugg = _planner.suggested_people(pr, e, [m for m in mails if not mail_privacy([_planner._addr(m.get('from'))[0]])[0]], own)
+    ppl = BOOK.overview()['people']
+    idx = _people_index()
+    items = _digest_items_newest()
+    proms = PROM.load()['items']
+    people = []
+    for x in stored + auto + sugg:
+        info = _plan_person(x['key'], ppl, idx, items, proms)
+        if info is None:
+            continue
+        row = dict(x)
+        row.update({k: v for k, v in info.items() if k != 'name' and (v is not None or k not in x)})
+        row['name'] = info.get('name') or x.get('name') or x['key']
+        people.append(row)
+    briefs = {}
+    targets = []
+    for t in e.get('targets') or []:
+        tt = dict(t, progress=_planner.progress(t), due=_planner._target_due(t))
+        if t.get('kind') == 'idea' and t.get('brief'):
+            try:
+                briefs.setdefault(t['brief'], BRIEF.briefs(t['brief'], 3))
+            except Exception:
+                briefs[t['brief']] = []
+            tt['signals'] = _planner.signals(t, briefs[t['brief']])
+        targets.append(tt)
+    return {'id': pid, 'state': e.get('state', 'active'), 'since': e.get('since'), 'waiting_for': e.get('waiting_for'), 'paused_until': e.get('paused_until'),
+            'people': people, 'targets': targets, 'step_ideas': _step_ideas(pid, pr, e),
+            'briefings': [{'id': b['id'], 'name': b.get('name')} for b in BRIEF.load().get('briefings') or []]}
+
+
+def _step_ideas(pid, pr, e):
+    """Steps Axella can suggest from what the project already has (no new Claude run): open tasks tagged to it, the
+    task cards from Read with Claude on its Mails card, and its meeting preps. The owner adds each with a tap."""
+    have = {str(s.get('text') or '').strip().lower() for t in e.get('targets') or [] for s in (t.get('steps') or []) + (t.get('experiments') or [])}
+    out = []
+
+    def add(text, src):
+        t = re.sub(r'[\x00-\x1f\x7f]', ' ', str(text or '')).strip()[:200]
+        if t and t.lower() not in have and t.lower() not in {o['text'].lower() for o in out}:
+            out.append({'text': t, 'src': src})
+    tag = re.compile(r'#%s\b' % re.escape(pr.get('tag') or '~'), re.I)
+    for t in load_json(TASKS_FILE, []):
+        if isinstance(t, dict) and t.get('status') != 'done' and tag.search(str(t.get('text') or '')):
+            add(tag.sub('', str(t.get('text'))), 'a task')
+    for c in ((PSCAN.load().get('projects') or {}).get(pid) or {}).get('suggestions') or []:
+        if c.get('kind') == 'task' and not c.get('done'):
+            add(c.get('text'), 'its mails')
+    now = datetime.datetime.now().astimezone().isoformat()
+    for m in MEET.overview():
+        if m.get('project') == pid and str(m.get('start') or '') >= now:
+            add('Prepare: %s' % (m.get('title') or 'the meeting'), 'a meeting')
+    return out[:8]
+
+
+def _plan_digest(n):
+    d = PLAN.load()
+    act = [x for x in _plan_projects() if x.get('status') == 'active']
+    names = {x['id']: x.get('name') for x in act}
+
+    def focus(day):
+        dd = d['days'].get(day.isoformat()) or {}
+        if dd.get('focus') or dd.get('none'):
+            return None
+        ev, _ = _plan_events(day, day + datetime.timedelta(days=1))
+        free = _planner.plan_day(d, act, day, ev, _work_hours(), focus=[])['free'] if ev is not None else 0
+        f = _planner.suggest_focus(d, act, day, free)
+        return {'projects': [names.get(x) for x in f['projects']], 'reason': f['reason']} if f['projects'] else None
+    mon = datetime.date.today() - datetime.timedelta(days=datetime.date.today().weekday())
+
+    def done():
+        return [names.get(pid) or (next((x.get('name') for x in PROJ.load()['projects'] if x['id'] == pid), pid))
+                for pid, e in d['projects'].items() if e.get('state') == 'done' and str(e.get('since') or '')[:10] >= mon.isoformat()]
+    return _planner.add_to_digest(PLAN, DIGESTS_DIR, n, focus, lambda: [c['text'] for c in _planner.checks_due(d, act, datetime.date.today())], done)
 
 
 import sprint as _sprint  # noqa: E402  (Reply sprint: the quick replies that are ready, one after another)
@@ -4726,7 +5013,7 @@ def _flagged_token(tok):
 
 
 # ---------- Projects → Scan mail (project_scan.py) ----------
-PROJECT_MAIL_ACTIONS = {'project_mail_scan', 'project_mail_add', 'project_mail_not', 'project_mail_undo_not', 'project_mail_remove',
+PROJECT_MAIL_ACTIONS = {'project_doc_from_mail', 'project_mail_scan', 'project_mail_add', 'project_mail_not', 'project_mail_undo_not', 'project_mail_remove',
                         'project_mail_undo_remove', 'project_mail_move', 'project_match_add', 'project_match_dismiss',
                         'project_trip_link', 'project_trip_unlink', 'project_mail_attach', 'project_read', 'project_suggestion_done'}
 _PSCAN_NIGHT = {}
@@ -4874,6 +5161,15 @@ def project_mail_action(action, p):
             return PSCAN.action(action, pid, p, other_pid=to['id'])
         if action == 'project_suggestion_done':
             return PSCAN.suggestion_done(pid, str(p.get('sid') or ''))
+        if action == 'project_doc_from_mail':
+            # "Save attachment to project…" / "Add with attachment": the mail joins the project's Mails card (the same
+            # checks as Add a mail…), then the attachment is copied into its Documents
+            if not isinstance(p.get('mail'), dict):
+                raise Bad('which mail?')
+            mid = str(p['mail'].get('message_id') or '')[:300]
+            if mid not in PSCAN.entry(pid)['added']:
+                project_mail_action('project_mail_add', {'id': pid, 'mail': p['mail']})
+            return project_mail_attach(pid, {'message_id': mid, 'n': p.get('n')})
         if action == 'project_mail_attach':
             return project_mail_attach(pid, p)
         if action == 'project_read':
@@ -5372,14 +5668,14 @@ _schedule_mod.IMMEDIATE = lambda: RUNNER.load()['enabled']
 # ---------- slow actions run in the background: a tap answers at once, Mail/Calendar work happens after ----------
 import queue as _queue  # noqa: E402
 SLOW_ACTIONS = {'draft', 'draft_new', 'reply_send', 'mail_send', 'invite_respond', 'file', 'trash', 'trash_batch', 'event', 'document_forward',
-                'cal_invite_send', 'cal_invite_update', 'cal_invite_cancel', 'block_hold',
+                'cal_invite_send', 'cal_invite_update', 'cal_invite_cancel', 'block_hold', 'plan_hold',
                 'contact_add', 'contact_update', 'contact_delete', 'contact_restore',
                 'cal_add', 'cal_update', 'cal_delete', 'cal_restore', 'trip_cal_add', 'trip_cal_sync', 'trip_cal_remove'}
 # changing contacts and the calendar: the owner's own login only – anyone else on the access list reads
-OWNER_ONLY = {'note_save', 'note_keep', 'note_delete', 'note_restore', 'note_todo', 'teach_not_important', 'rule_remove', 'rule_restore', 'suggest_accept', 'suggest_later', 'suggest_never',
+OWNER_ONLY = set(PLAN_ACTIONS) | {'note_save', 'note_keep', 'note_delete', 'note_restore', 'note_todo', 'teach_not_important', 'rule_remove', 'rule_restore', 'suggest_accept', 'suggest_later', 'suggest_never',
               'calm_setup_step', 'calm_setup_dismiss', 'backup_export', 'backup_auto', 'backup_run', 'away_archive', 'away_undo', 'away_catchup', 'block_settings', 'block_never', 'block_not_now', 'block_hold', 'renewal_add', 'renewal_not', 'renewal_update', 'renewal_snooze', 'renewal_let_renew', 'renewal_renewed', 'renewal_past',
               'renewal_delete', 'renewal_scan', 'renewal_todo', 'contact_add', 'contact_update', 'contact_delete', 'contact_restore', 'cal_add', 'cal_update', 'cal_delete', 'cal_restore',
-              'project_mail_scan', 'project_mail_add', 'project_mail_not', 'project_mail_undo_not', 'project_mail_remove',
+              'project_doc_from_mail', 'project_mail_scan', 'project_mail_add', 'project_mail_not', 'project_mail_undo_not', 'project_mail_remove',
               'project_mail_undo_remove', 'project_mail_move', 'project_match_add', 'project_match_dismiss', 'project_trip_link',
               'project_trip_unlink', 'project_mail_attach', 'project_read', 'project_suggestion_done',
               'cal_invite_send', 'cal_invite_update', 'cal_invite_cancel', 'meeting_service_connect', 'meeting_service_disconnect',
@@ -6127,6 +6423,19 @@ class Handler(BaseHTTPRequestHandler):
                                                                         q.get('ref', [None])[0])})
             except (_notes.Bad, Bad) as e:
                 return self._send(400, {'ok': False, 'error': str(e)})
+        if a in ('plan', 'plan_week', 'project_plan'):     # Targets and Now · Next · Later: owner only
+            if login not in owner_logins():
+                return self._send(403, {'ok': False, 'error': 'Only the owner can see the plan'})
+            from urllib.parse import parse_qs, urlparse
+            q = parse_qs(urlparse(self.path).query)
+            try:
+                if a == 'plan':
+                    return self._send(200, {'ok': True, **plan_view()})
+                if a == 'plan_week':
+                    return self._send(200, {'ok': True, **plan_week_view(q.get('whole', [''])[0] == '1')})
+                return self._send(200, {'ok': True, **project_plan_view(q.get('id', [''])[0][:100])})
+            except Bad as e:
+                return self._send(400, {'ok': False, 'error': str(e)})
         if a == 'later':                                  # what you pushed to Later (Today, the bottom line)
             return self._send(200, {'ok': True, **later_view()})
         if a == 'learn':                                  # Teach Axella: Settings → Rules, and the one suggestion card
@@ -6458,7 +6767,7 @@ class Handler(BaseHTTPRequestHandler):
                 lim = max(10, min(200, int(qs.get('limit', ['40'])[0])))
             except ValueError:
                 lim = 40
-            return self._send(200, {'ok': True, **mail_search(qs.get('q', [''])[0], lim)})
+            return self._send(200, {'ok': True, **mail_search(qs.get('q', [''])[0], lim, qs.get('before', [''])[0][:32] or None)})
         if a == 'message':
             from urllib.parse import parse_qs, urlparse
             q = parse_qs(urlparse(self.path).query)

@@ -7,7 +7,7 @@ import { toast } from 'sonner'
 import { CalendarDays, ChevronRight, ExternalLink, Pencil, Plus, RotateCw, Trash2 } from '@/components/ax-icons'
 import { withUndo } from '@/components/Contacts'
 import { useCalendarRefresh } from '@/lib/calendarBus'
-import { PrepareButton } from '@/components/Meetings'
+import { EventProject, PrepareButton } from '@/components/Meetings'
 import { PendingInvites } from '@/components/Invite'
 import { InviteConfirm, InviteStatus, InviteesField, OnlinePicker, myZone, newSendId, useOnline, type InviteRec, type Online, type Person } from '@/components/CalendarInvites'
 import { joinLink } from '@/lib/meetings'
@@ -252,6 +252,7 @@ function EventSheet({ e, caps, onClose, onChanged }: { e: CalEventRow; caps: Cap
           {join && <Button size="pill" asChild><a href={join} target="_blank" rel="noopener noreferrer"><ExternalLink />Join meeting</a></Button>}
           <PrepareButton e={e} onGo={onClose} />
         </div>
+        <EventProject e={e} />
         {e.attendees > 0 && ax.apiOk && <InviteStatus e={e} onEdit={setInviteEdit} onFound={setByAxella} onCancelled={() => { onClose(); onChanged() }} />}
         {e.notes && <div className="bg-bg-2/60 max-h-60 overflow-y-auto rounded-md border px-3 py-2 text-[13.5px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">{e.notes.replace(/<https?:\/\/[^>\s]+>/g, '').replace(/_{10,}/g, '———')}</div>}
         {e.url && /^https?:\/\//i.test(e.url) && <a className="text-fjord block truncate text-sm hover:underline" href={e.url} target="_blank" rel="noopener noreferrer">{e.url}</a>}

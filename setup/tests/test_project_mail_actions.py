@@ -106,6 +106,29 @@ try:
     ok(False, 'only from a mail on the project')
 except A.Bad:
     ok(True, 'only from a mail on the project')
+up.clear()
+A.meeting_mail_addresses = lambda sender, mid, strict=False: ['lee@example.com']
+A.project_mail_action('project_doc_from_mail', {'id': pid, 'n': 2, 'mail': {'account': 'iCloud', 'message_id': 'm11@x', 'subject': 'Contract', 'from': 'Lee'}})
+ok('m11@x' in A.PSCAN.entry(pid)['added'] and up and up[0][:2] == (pid, 'plan.pdf'),
+   'Save attachment to project: the mail joins the Mails card, its attachment goes to Documents')
+A.meeting_mail_addresses = lambda sender, mid, strict=False: ['anna@example.com']
+try:
+    A.project_mail_action('project_doc_from_mail', {'id': pid, 'n': 1, 'mail': {'account': 'iCloud', 'message_id': 'm12@x', 'subject': 'x'}})
+    ok(False, '… never a mail with a private contact')
+except A.Bad:
+    ok(True, '… never a mail with a private contact')
+ok('project_doc_from_mail' in A.OWNER_ONLY, '… owner only')
+seen = {}
+_srch = A.mailsearch.search
+A.mailsearch.search = lambda q, names, own, limit=40, classify=None, before=None: (seen.update(before=before), [])[1]
+A.mail_search('contract', 40, '2024-03-01T10:00:00Z')
+T10 = datetime.datetime(2024, 3, 1, 10, tzinfo=datetime.timezone.utc).timestamp()
+ok(abs(seen['before'] - T10) < 1, 'search "Show older": before an ISO time (Z works)')
+A.mail_search('contract', 40, '2024-03-01')
+ok(seen['before'] and seen['before'] < T10, '… or before a date')
+ok(A.mail_search('contract', 40, 'soon')['error'] == 'give the date as YYYY-MM-DD', '… a bad date is refused')
+A.mailsearch.search = _srch
+A.meeting_mail_addresses = lambda sender, mid, strict=False: ['lee@example.com']
 A.project_mail_action('project_match_add', {'id': pid, 'match': 'robin@robin-events.example'})
 ok('robin@robin-events.example' in A._project_of(pid)['senders'], '"Add to this project\'s matches": the sender is in Matches')
 # ---- a protected workplace's mail and Claude: only on its own project, and only with its AI setting "all"

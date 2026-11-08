@@ -17,6 +17,7 @@ import { ItemRow } from '@/components/ItemRow'
 import { Banners, useBySection } from '@/components/Today'
 import { OfflineScreen } from '@/components/Offline'
 import { PauseBanner } from '@/components/Settings'
+import { PlanToday } from '@/components/Plan'
 import { useApp } from '@/lib/app'
 import type { Call, Item, Task } from '@/lib/types'
 import { cn, isoDate } from '@/lib/utils'
@@ -261,6 +262,7 @@ export function NowView() {
     <WrapCard />
     {!cur?.data.wrap?.headline && <SuggestionCard />}
     <TravelCard />
+    <PlanToday />
     <SprintCard />
     <RenewalsCard />
     <div className="grid grid-cols-1 items-start gap-5 min-[1100px]:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">

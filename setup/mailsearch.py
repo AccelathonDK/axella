@@ -143,7 +143,7 @@ def _emlx(base, rowid, deep=False):
     return None
 
 
-def search_index(words, account_names, own, limit):
+def search_index(words, account_names, own, limit, before=None):
     path = _envelope()
     if not path:
         raise SearchError("Mail's index wasn't found (no ~/Library/Mail/V*/MailData/Envelope Index)")
@@ -175,6 +175,9 @@ def search_index(words, account_names, own, limit):
         if 'deleted' in mc:
             where.append('m.deleted = 0')
         date = 'm.date_received' if 'date_received' in mc else ('m.date_sent' if 'date_sent' in mc else 'm.ROWID')
+        if before is not None and date != 'm.ROWID':     # "Show older": only mail received before this moment (epoch seconds)
+            where.append('%s < ?' % date)
+            args.append(float(before))
         prefix = 'm.subject_prefix' if 'subject_prefix' in mc else "''"
         rows = db.execute('''select m.ROWID rowid, %s prefix, s.subject subject, a.address addr, a.comment name, %s date,
                                     mb.url url %s
@@ -212,12 +215,22 @@ def search_index(words, account_names, own, limit):
                         'subject': ((r['prefix'] or '') + (r['subject'] or '')).strip() or '(no subject)',
                         'from_name': r['name'] or '', 'from_address': addr, 'from_me': addr.lower() in own, 'to': to,
                         'date': _iso_ts(r['date']), 'message_id': mid, 'account': acc, 'mailbox': box,
-                        'has_attachments': None, '_addrs': [addr] + rcpt})
+                        'has_attachments': _has_att(db, r['rowid']), '_addrs': [addr] + rcpt})
             if len(out) >= limit:
                 break
         return out
     finally:
         db.close()
+
+
+def _has_att(db, rowid):
+    """True/False from Mail's own attachments table; None when this index has no such table (then the dashboard asks)."""
+    try:
+        if 'message' not in _cols(db, 'attachments'):
+            return None
+        return db.execute('select 1 from attachments where message = ? limit 1', (rowid,)).fetchone() is not None
+    except sqlite3.Error:
+        return None
 
 
 def invite_candidates(account_names, days=30, limit=60, now=None):
@@ -410,7 +423,7 @@ def _where(path, account_names):
     return account_names.get(acc), '/'.join(boxes)
 
 
-def search_spotlight(words, account_names, own, limit, timeout=15):
+def search_spotlight(words, account_names, own, limit, timeout=15, before=None):
     try:
         r = subprocess.run(['/usr/bin/mdfind', '-onlyin', MAIL_DIR, _query(words)], capture_output=True, text=True, timeout=timeout)
     except (subprocess.TimeoutExpired, OSError):
@@ -418,9 +431,11 @@ def search_spotlight(words, account_names, own, limit, timeout=15):
     dated = []
     for p in [p for p in r.stdout.splitlines() if p.endswith('.emlx')][:2000]:
         try:
-            dated.append((os.path.getmtime(p), p))
+            t = os.path.getmtime(p)
         except OSError:
-            pass
+            continue
+        if before is None or t < float(before):
+            dated.append((t, p))
     dated.sort(reverse=True)
     out = []
     for _, p in dated[:limit]:
@@ -438,11 +453,11 @@ def search_spotlight(words, account_names, own, limit, timeout=15):
         out.append({'token': _token({'path': rp, 'account': acc, 'mid': mid}), 'subject': _dec(h.get('Subject')) or '(no subject)',
                     'from_name': name, 'from_address': addr, 'from_me': addr.lower() in own, 'to': _dec(h.get('To'))[:200],
                     'date': _iso(h.get('Date')), 'message_id': mid, 'account': acc, 'mailbox': box,
-                    'has_attachments': 'multipart/mixed' in (h.get('Content-Type') or '').lower(), '_addrs': addrs})
+                    'has_attachments': True if 'multipart/mixed' in (h.get('Content-Type') or '').lower() else None, '_addrs': addrs})
     return out
 
 
-def search(q, account_names, own_addresses=(), limit=40, classify=None):
+def search(q, account_names, own_addresses=(), limit=40, classify=None, before=None):
     """Newest first, both sources merged. account_names: Mail's account id → the account name used in Axella – mail in
     other accounts is left out. classify(addresses) → (level, name): a message that involves a hidden contact is left
     out, one that involves a private contact comes back as who/when only, with no token to open it."""
@@ -452,13 +467,13 @@ def search(q, account_names, own_addresses=(), limit=40, classify=None):
     own = {a.lower() for a in own_addresses if a}
     err, found = None, []
     try:
-        found = search_index(words, account_names, own, limit)
+        found = search_index(words, account_names, own, limit, before)
     except SearchError as e:
         err = e
     except sqlite3.Error as e:
         err = SearchError("Mail's index couldn't be read: %s" % e)
     ids = {f['message_id'] for f in found if f['message_id']}
-    for f in search_spotlight(words, account_names, own, limit):
+    for f in search_spotlight(words, account_names, own, limit, before=before):
         if f['message_id'] not in ids:
             found.append(f)
     if not found and err:
@@ -540,7 +555,27 @@ def _text(msg):
 
 
 def _attachments(msg):
-    return [a for a in msg.iter_attachments() if a.get_filename()]
+    """Every part with a file name, wherever it sits: Apple Mail puts a PDF you attach inline, inside
+    multipart/alternative → multipart/mixed, where iter_attachments() doesn't look."""
+    return [a for a in msg.walk() if not a.is_multipart() and a.get_filename()]
+
+
+def _disk_attachment(emlx_path, name):
+    """Mail keeps big attachments next to the mailbox (…/Attachments/<id>/<n>/<file>) and only their headers in the
+    .partial.emlx – read the file from there."""
+    base = os.path.basename(emlx_path).split('.')[0]
+    root = os.path.join(os.path.dirname(os.path.dirname(emlx_path)), 'Attachments', base)
+    for f in sorted(glob.glob(os.path.join(glob.escape(root), '*', '*'))):
+        rf = os.path.realpath(f)
+        if os.path.basename(f) == name and _inside_mail(rf) and os.path.isfile(rf) and os.path.getsize(rf) <= 50 * 2**20:
+            with open(rf, 'rb') as fh:
+                return fh.read()
+    return None
+
+
+def _inside_mail(rp):
+    root = os.path.realpath(MAIL_DIR)
+    return rp.startswith(root + os.sep)
 
 
 def read(token, pics=False):
@@ -903,6 +938,8 @@ def attachment(token, n):
     if not 0 <= i < len(atts):
         raise SearchError('no such attachment')
     data = atts[i].get_payload(decode=True) or b''
+    if not data:                                   # kept outside the .emlx by Mail
+        data = _disk_attachment(rp, _dec(atts[i].get_filename())) or b''
     if not data:                                   # only the headers are on disk: let Mail fetch it
         e = _TOK.get(str(token or '')) or {}
         if e.get('account') and e.get('mid'):

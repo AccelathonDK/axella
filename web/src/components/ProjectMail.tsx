@@ -4,7 +4,7 @@
    suggests cards you confirm one by one. Linking a trip shows its card here. */
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { CalendarPlus, Check, ExternalLink, FileText, Inbox, Loader2, Plus, RotateCw, Sparkles, StickyNote, Trip as TripIcon, X } from '@/components/ax-icons'
+import { CalendarPlus, Check, ExternalLink, FileText, Inbox, Loader2, Paperclip, Plus, RotateCw, Sparkles, StickyNote, Trip as TripIcon, X } from '@/components/ax-icons'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
@@ -115,7 +115,7 @@ export function ProjectMail({ p }: { p: Project }) {
       </div>}
     </SectionCard>
     {v.suggestions.length > 0 && <Suggestions p={p} cards={v.suggestions} onDone={load} />}
-    {adding && <AddMailDialog onClose={() => setAdding(false)} onAdd={m => act('add', 'project_mail_add', { mail: m, message_id: m.message_id }, 'Added to ' + p.name).then(ok => ok && setAdding(false))} />}
+    {adding && <AddMailDialog pid={p.id} onClose={() => setAdding(false)} onAdd={m => act('add', 'project_mail_add', { mail: m, message_id: m.message_id }, 'Added to ' + p.name).then(ok => ok && setAdding(false))} />}
     {moving && <Dialog open onOpenChange={o => !o && setMoving(null)}><DialogContent className="sm:max-w-sm"><div className="space-y-3 p-5 text-sm">
       <DialogTitle className="text-lg font-semibold">Add to another project</DialogTitle>
       <div className="divide-y rounded-md border">{others.map(o => <button key={o.id} className="hover:bg-bg-2 block w-full px-3 py-2 text-left" disabled={!!busy}
@@ -183,39 +183,113 @@ function Suggestions({ p, cards, onDone }: { p: Project; cards: Card_[]; onDone:
   </Card>
 }
 
-interface Found { account?: string | null; message_id?: string | null; subject?: string; from_name?: string; from_address?: string; date?: string; private?: boolean }
+interface Found { account?: string | null; message_id?: string | null; subject?: string; from_name?: string; from_address?: string; date?: string; private?: boolean; has_attachments?: boolean | null }
 
-function AddMailDialog({ onClose, onAdd }: { onClose: () => void; onAdd: (m: { account: string; message_id: string; subject?: string; from?: string; date?: string }) => void }) {
+function AddMailDialog({ pid, onClose, onAdd }: { pid: string; onClose: () => void; onAdd: (m: MailPick) => void }) {
   const [q, setQ] = useState('')
-  const [res, setRes] = useState<{ items: Found[]; error?: string } | null>(null)
+  const [before, setBefore] = useState('')
+  const [res, setRes] = useState<{ items: Found[]; error?: string; more?: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
-  async function search(e?: React.FormEvent) {
+  const [open, setOpen] = useState<string | null>(null)
+  const LIMIT = 40
+  async function search(e?: React.FormEvent, older?: string) {
     e?.preventDefault()
     if (q.trim().length < 2) return
     setBusy(true)
-    try { setRes(await get<{ items: Found[]; error?: string }>('mail_search?q=' + encodeURIComponent(q.trim()) + '&limit=40')) }
-    catch (x: any) { setRes({ items: [], error: x.message }) } finally { setBusy(false) }
+    const b = older || (before ? before : '')
+    try {
+      const r = await get<{ items: Found[]; error?: string }>('mail_search?q=' + encodeURIComponent(q.trim()) + '&limit=' + LIMIT + (b ? '&before=' + encodeURIComponent(b) : ''))
+      setRes(prev => older && prev ? { items: [...prev.items, ...r.items.filter(x => !prev.items.some(y => y.message_id && y.message_id === x.message_id))], error: r.error, more: r.items.length >= LIMIT }
+        : { ...r, more: r.items.length >= LIMIT })
+    } catch (x: any) { setRes({ items: [], error: x.message }) } finally { setBusy(false) }
   }
+  const last = res?.items.filter(f => f.date).slice(-1)[0]?.date
   return <Dialog open onOpenChange={o => !o && onClose()}>
-    <DialogContent className="max-h-[85dvh] overflow-y-auto sm:w-[min(560px,94vw)]">
+    <DialogContent className="max-h-[85dvh] overflow-y-auto sm:w-[min(600px,94vw)]">
       <div className="space-y-3 p-5 text-sm" data-add-project-mail="">
         <DialogTitle className="text-lg font-semibold">Add a mail to this project</DialogTitle>
-        <p className="text-ink-3 -mt-1 text-[13px]">Search all mail on the Mac mini. Mail with a private contact can't be added.</p>
-        <form onSubmit={search} className="flex gap-2"><Input value={q} onChange={e => setQ(e.target.value)} placeholder="Sender, subject or a word" autoFocus />
+        <p className="text-ink-3 -mt-1 text-[13px]">Searches every mail on the Mac mini – all dates, all your accounts in Axella – in Mail's index and with Spotlight. Mail with a private contact can't be added.</p>
+        <form onSubmit={e => search(e)} className="flex flex-wrap gap-2"><Input value={q} onChange={e => setQ(e.target.value)} placeholder="Sender, subject or a word" autoFocus className="min-w-[12rem] flex-1" />
+          <Input type="date" value={before} onChange={e => setBefore(e.target.value)} className="w-40" aria-label="Received before (optional)" title="Received before (optional)" />
           <Button type="submit" disabled={busy || q.trim().length < 2}>{busy ? <Loader2 className="animate-spin" /> : null}Search</Button></form>
         {res?.error && <p className="text-dawn text-[13px]">{res.error}</p>}
-        {res && !res.error && !res.items.length && <p className="text-ink-3 text-[13px]">Nothing found.</p>}
+        {res && !res.error && !res.items.length && <p className="text-ink-3 text-[13px]">Nothing found{before ? ' before ' + day(before) : ''}.</p>}
         {!!res?.items.length && <div className="divide-y rounded-md border">{res.items.map((f, i) => {
           const can = !f.private && !!f.message_id && !!f.account
-          return <div key={(f.message_id || '') + i} className="flex items-center gap-2 px-3 py-2">
-            <span className="min-w-0 flex-1"><span className="block truncate">{f.private ? 'A mail with a private contact' : f.subject || '(no subject)'}</span>
-              <span className="text-ink-3 text-[12.5px]">{[f.private ? '' : f.from_name || f.from_address, day(f.date)].filter(Boolean).join(' · ')}</span></span>
-            {can && <Button size="pill" variant="outline" onClick={() => onAdd({ account: f.account!, message_id: f.message_id!, subject: f.subject, from: f.from_name || f.from_address, date: f.date })}>Add</Button>}
+          const pick: MailPick | null = can ? { account: f.account!, message_id: f.message_id!, subject: f.subject, from: f.from_name || f.from_address, date: f.date } : null
+          return <div key={(f.message_id || '') + i} className="px-3 py-2" data-found-mail={f.message_id || ''}>
+            <div className="flex items-center gap-2">
+              <span className="min-w-0 flex-1">{pick
+                ? <button type="button" className="block max-w-full truncate text-left hover:underline" title="Open the mail" data-open-found=""
+                    onClick={() => openMailInAxella({ account: pick.account, message_id: pick.message_id, subject: pick.subject, from: pick.from })}>{f.subject || '(no subject)'}</button>
+                : <span className="block truncate">{f.private ? 'A mail with a private contact' : f.subject || '(no subject)'}</span>}
+                <span className="text-ink-3 text-[12.5px]">{[f.private ? '' : f.from_name || f.from_address, day(f.date)].filter(Boolean).join(' · ')}</span></span>
+              {pick && f.has_attachments !== false && <Button size="pill" variant="ghost" onClick={() => setOpen(o => o === f.message_id ? null : f.message_id!)} data-show-attachments=""><Paperclip />Attachments</Button>}
+              {pick && <Button size="pill" variant="outline" onClick={() => onAdd(pick)}>Add</Button>}
+            </div>
+            {pick && open === f.message_id && <Attachments pid={pid} mail={pick} />}
           </div>
         })}</div>}
+        {res?.more && last && <Button size="pill" variant="outline" disabled={busy} onClick={() => search(undefined, last)} data-show-older="">{busy ? <Loader2 className="animate-spin" /> : null}Show older</Button>}
       </div>
     </DialogContent>
   </Dialog>
+}
+
+type MailPick = { account: string; message_id: string; subject?: string; from?: string; date?: string }
+
+/** a mail's attachments, each with "Add to Documents" – the mail joins the project's Mails card at the same time */
+function Attachments({ pid, mail }: { pid: string; mail: MailPick }) {
+  const { ax } = useApp()
+  const [names, setNames] = useState<string[] | null>(null)
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState<number | null>(null)
+  const [done, setDone] = useState<number[]>([])
+  useEffect(() => {
+    get<{ message: { attachments: string[] } }>(`message?account=${encodeURIComponent(mail.account)}&id=${encodeURIComponent(mail.message_id)}`)
+      .then(r => setNames(r.message.attachments || [])).catch(e => setErr(e.message))
+  }, [mail.account, mail.message_id])
+  return <div className="mt-1.5 space-y-1 pl-1" data-attachments="">
+    {err && <p className="text-dawn text-[12.5px]">{err}</p>}
+    {!names && !err && <p className="text-ink-3 flex items-center gap-2 text-[12.5px]"><Loader2 className="size-3.5 animate-spin" />Reading the mail…</p>}
+    {names && !names.length && <p className="text-ink-3 text-[12.5px]">No attachments.</p>}
+    {names?.map((n, i) => <div key={i} className="flex items-center gap-2 text-[13px]">
+      <Paperclip className="text-ink-3 size-3.5 shrink-0" /><span className="min-w-0 flex-1 truncate">{n}</span>
+      {done.includes(i) ? <span className="text-ink-3 flex items-center gap-1"><Check className="size-3.5" />In Documents</span>
+        : <Button size="pill" variant="outline" disabled={busy !== null} data-add-attachment={i + 1} onClick={async () => {
+          setBusy(i)
+          try { await ax.act('project_doc_from_mail', { id: pid, mail, n: i + 1 }, ['projects']); setDone(d => [...d, i]); toast(n + ' added to Documents') }
+          catch (x: any) { toast.error('Not added: ' + x.message) } finally { setBusy(null) }
+        }}>{busy === i ? <Loader2 className="animate-spin" /> : <FileText />}Add to Documents</Button>}
+    </div>)}
+  </div>
+}
+
+/** Any mail opened in Axella: save one of its attachments into a project's Documents (the mail joins that project's Mails card). */
+export function SaveToProject({ account, messageId, subject, from, date, attachments }: { account: string; messageId: string; subject?: string; from?: string; date?: string; attachments: string[] }) {
+  const { ax } = useApp()
+  const [open, setOpen] = useState(false)
+  const [pid, setPid] = useState('')
+  const [n, setN] = useState(1)
+  const [busy, setBusy] = useState(false)
+  const act = ax.projects.filter(p => p.status === 'active')
+  if (!attachments.length || !act.length || !ax.apiOk) return null
+  if (!open) return <button type="button" className="text-fjord inline-flex items-center gap-1 text-[12.5px] font-medium hover:underline" onClick={() => setOpen(true)} data-save-to-project="">
+    <FileText className="size-3.5" />Save to a project…</button>
+  return <div className="bg-card flex flex-wrap items-center gap-2 rounded-md border p-2 text-[13px]" data-save-to-project-form="">
+    {attachments.length > 1 && <select className="border-line-strong bg-card h-8 max-w-56 rounded-md border px-2" value={n} onChange={e => setN(+e.target.value)} aria-label="Attachment">
+      {attachments.map((a, i) => <option key={i} value={i + 1}>{a}</option>)}</select>}
+    <select className="border-line-strong bg-card h-8 rounded-md border px-2" value={pid} onChange={e => setPid(e.target.value)} aria-label="Project">
+      <option value="">Pick a project…</option>{act.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select>
+    <Button size="pill" disabled={!pid || busy} onClick={async () => {
+      setBusy(true)
+      try {
+        await ax.act('project_doc_from_mail', { id: pid, mail: { account, message_id: messageId, subject, from, date }, n }, ['projects'])
+        toast(`${attachments[n - 1]} saved to ${act.find(p => p.id === pid)?.name} → Documents`); setOpen(false)
+      } catch (x: any) { toast.error('Not saved: ' + x.message) } finally { setBusy(false) }
+    }}>{busy ? <Loader2 className="animate-spin" /> : <Check />}Save</Button>
+    <Button size="pill" variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+  </div>
 }
 
 /** On the project page: Link to trip offers, and the linked trips' cards (dates, bookings, next item). */

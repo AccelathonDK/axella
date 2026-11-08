@@ -10,6 +10,7 @@ import { AttachButton, AttachList, useAttachments } from '@/components/Send'
 import { BasedOn } from '@/components/Knowledge'
 import { openAsk } from '@/components/Ask'
 import { get } from '@/lib/api'
+import { SaveToProject } from '@/components/ProjectMail'
 import { useApp } from '@/lib/app'
 import { ctxOf, isNoReply, senderKey } from '@/lib/data'
 import { accLabel } from '@/lib/profile'
@@ -273,6 +274,8 @@ export function ItemSheet({ it, handled, since, onClose, onCal, sprint }: { it: 
                           onClick={IMG.test(a) || PDF.test(a) ? e => { e.preventDefault(); setZoom({ src: `api/attachment?${src}&n=${i + 1}`, name: a }) } : undefined}
                           className="bg-card hover:bg-fjord-soft inline-flex items-center gap-1 rounded-sm border px-2 py-0.5 text-xs underline-offset-2 hover:underline"><Paperclip className="size-3" />{a}</a>)}
                       </div>}
+                      {!!m.attachments.length && it.channel === 'mail' && it.account && it.message_id && <div className="mt-1.5">
+                        <SaveToProject account={it.account} messageId={it.message_id} subject={m.subject} from={m.from.replace(/\s*<.*$/, '')} date={it.date || it.first_seen} attachments={m.attachments} /></div>}
                       {msgOpen && m.html && !plain
                         ? <MailFrame html={m.html} />
                         : <div className={cn('text-ink-2 mt-2 text-[14px] leading-relaxed break-words whitespace-pre-wrap', msgOpen ? 'max-h-[35vh] overflow-y-auto' : 'line-clamp-4')}>{m.body || '(no text)'}

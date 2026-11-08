@@ -54,6 +54,7 @@ function NoteEditor({ init, onClose }: { init: { id?: string; links?: NoteLink[]
   if (!note) return null
   const isNew = !note.id
   const canRemind = note.links.some(l => ['person', 'mail', 'chat', 'meeting', 'trip'].includes(l.kind))
+  const linkable = ax.projects.filter(x => x.status === 'active' && !note.links.some(l => l.kind === 'project' && l.ref === x.id))   // "Link to a project…"
   const remindLabel = note.links.some(l => ['person', 'mail', 'chat'].includes(l.kind)) ? 'Remind me when they write' : 'Remind me on the day'
   async function save(extra: Partial<Note> = {}, close = false) {
     if (!text.trim()) { toast.error('Write something first'); return null }
@@ -112,6 +113,9 @@ function NoteEditor({ init, onClose }: { init: { id?: string; links?: NoteLink[]
           <label className="flex items-center gap-2">
             <NativeSelect value={note.ctx || ''} onChange={e => set({ ctx: (e.target.value || null) as Note['ctx'] })} aria-label="Work or Private" className="h-9 w-auto">
               <option value="">Work and Private</option><option value="work">Work</option><option value="private">Private</option></NativeSelect></label>
+          {linkable.length > 0 && <NativeSelect value="" aria-label="Link to a project" className="h-9 w-auto" data-note-link-project=""
+            onChange={e => { const pr = linkable.find(x => x.id === e.target.value); if (pr) set({ links: [...note.links, { kind: 'project', ref: pr.id, label: pr.name }] }) }}>
+            <option value="">Link to a project…</option>{linkable.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</NativeSelect>}
           {canRemind && <label className="flex min-h-9 items-center gap-2" data-note-remind=""><input type="checkbox" checked={!!note.remind} onChange={e => set({ remind: e.target.checked })} /><BellRing className="text-ink-3 size-4" />{remindLabel}</label>}
         </div>
         {canRemind && note.remind && <p className="text-ink-3 text-[12px]">A quiet chip on that item in Today – added on the Mac mini, never put in the digest or sent to Claude.</p>}

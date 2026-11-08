@@ -58,7 +58,7 @@ SECRETS = ('state/voice-token', 'state/voice-lookup-key', 'state/report-install-
            'state/privacy.json', 'state/private-inbox.json', 'state/private-notified.json', 'state/signal-store.json',
            'state/private-calls.json', 'state/private-calls/**', 'state/contacts-book.json', 'state/people-notes.json', 'state/keep-in-touch.json', 'state/bills.json', 'state/trip-checklists.json', 'state/recurring.json', 'state/renewals.json', 'state/blocks.json', 'state/away.json', 'state/backup.json', 'state/export/**', 'pre-restore-*/**', 'state/project-mail.json', 'state/online-meetings.json', 'state/calendar-invites.json',
            'state/deleted/**', 'state/macuse-calendar-tools.json', 'state/meetings/**',
-           'state/scheduled.json', 'state/scheduled-files/**', 'state/promises.json', 'notes/**')   # who is private is not for Claude either
+           'state/scheduled.json', 'state/scheduled-files/**', 'state/promises.json', 'notes/**', 'state/planner.json')   # who is private is not for Claude either
 
 # the apps' own message stores – runs see mail and messages only through Macuse (filtered) and the exports
 APP_STORES = ('~/Library/Messages/**', '~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/**',

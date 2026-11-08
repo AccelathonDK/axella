@@ -69,15 +69,23 @@ def _unfold(text):
     return re.sub(r'\r?\n[ \t]', '', str(text or '')).replace('\r\n', '\n').replace('\r', '\n').split('\n')
 
 
+MAX_LINE = 4000                                  # characters where a line's name and parameters must end
+
+
 def _line(l):
     """'DTSTART;TZID=Europe/Copenhagen:20261105T090000' → ('DTSTART', {'TZID': 'Europe/Copenhagen'}, '20261105T090000')"""
-    m = re.match(r'^([A-Za-z0-9-]+)((?:;[^:]*)?):(.*)$', l)
+    # a quoted parameter may hold a colon (SENT-BY="mailto:…", CN="Team: Sales") – the value starts after the first
+    # colon outside quotes (RFC 5545 3.1)
+    # no comma in an unquoted value, so each one splits only one way (no backtracking blow-up on a crafted line).
+    # Only the name and parameters are matched, within the first MAX_LINE characters; the value (a long DESCRIPTION
+    # with a join link) is everything after them
+    m = re.match(r'([A-Za-z0-9-]+)((?:;[A-Za-z0-9-]+=(?:"[^"]*"|[^";:,]*)(?:,(?:"[^"]*"|[^";:,]*))*)*):', l[:MAX_LINE])
     if not m:
         return None
     params = {}
     for pm in re.finditer(r';([A-Za-z0-9-]+)=("[^"]*"|[^;]*)', m.group(2)):
         params[pm.group(1).upper()] = pm.group(2).strip('"')
-    return m.group(1).upper(), params, m.group(3)
+    return m.group(1).upper(), params, l[m.end():]
 
 
 def _text(v):

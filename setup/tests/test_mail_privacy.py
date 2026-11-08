@@ -23,12 +23,12 @@ def row(tok, acc, addrs, subj):
             'has_attachments': None, '_addrs': addrs}
 
 
-M.search_index = lambda words, names, own, limit: [
+M.search_index = lambda words, names, own, limit, before=None: [
     row('t1', 'iCloud', ['lee@clientb.example'], 'Report'),
     row('t2', 'iCloud', ['sam@acme.example', 'kim@private.example'], 'SECRET plans'),     # private in Cc
     row('t3', 'iCloud', ['robin@hidden.example'], 'Hidden thing'),
     row('t4', None, ['lee@clientb.example'], 'Other account')]
-M.search_spotlight = lambda words, names, own, limit: []
+M.search_spotlight = lambda words, names, own, limit, **k: []
 LEVEL = {'kim@private.example': 'private', 'robin@hidden.example': 'hidden'}
 
 

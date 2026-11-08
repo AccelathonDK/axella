@@ -15,6 +15,8 @@ import { get } from '@/lib/api'
 import { useApp } from '@/lib/app'
 import { cn } from '@/lib/utils'
 import { LinkedNotes } from '@/components/Notes'
+import { useNotesOwner } from '@/lib/notes'
+import { usePlan } from '@/lib/plan'
 
 interface Line { id: string; channel: string; at: string; title?: string }
 interface Entry { id: string; digest?: string; channel: string; at: string; dir: 'in' | 'out' | 'call'; title?: string; snippet?: string; minutes?: number }
@@ -83,6 +85,7 @@ export function PersonView({ id }: { id: string }) {
       }).catch(e => toast.error(e.message))}><Pencil />Edit contact</Button>}
     </div>
 
+    <PersonProjects p={p} />
     <KeepInTouch p={p} onChange={k => setP({ ...p, keep: k })} />
 
     <Card className="space-y-3 p-4" data-person-open="">
@@ -123,6 +126,22 @@ export function PersonView({ id }: { id: string }) {
     </Card>
     {edit && <ContactForm init={edit} onClose={() => setEdit(null)} onDone={() => { setEdit(null); load() }} />}
     {!ax.apiOk && <p className="text-ink-3 text-[12px]">Offline – changes wait until the Mac mini is reachable.</p>}
+  </div>
+}
+
+/** The projects this person is on (Targets and Now · Next · Later – people on a project). */
+function PersonProjects({ p }: { p: PersonPage }) {
+  const { ax, go } = useApp()
+  const owner = useNotesOwner(ax.apiOk)
+  const plan = usePlan(!!owner && ax.apiOk)
+  if (!plan) return null
+  const digits = (s: string) => s.replace(/[^\d]/g, '').slice(-8)
+  const mine = new Set([...p.emails.map(e => e.toLowerCase()), ...p.phones.map(digits)])
+  const ps = ax.projects.filter(x => x.status === 'active' && (plan.projects[x.id]?.people || []).some(k => mine.has(k.toLowerCase()) || (!k.includes('@') && mine.has(digits(k)))))
+  if (!ps.length) return null
+  return <div className="flex flex-wrap items-center gap-2 text-sm" data-person-projects="">
+    <span className="text-ink-3">On</span>
+    {ps.map(x => <button key={x.id} type="button" onClick={() => go({ kind: 'project', id: x.id })} className="hover:border-line-strong rounded-md border px-2 py-1 font-medium">{x.name}</button>)}
   </div>
 }
 
