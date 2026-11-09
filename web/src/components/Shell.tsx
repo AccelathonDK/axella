@@ -512,7 +512,7 @@ export function Shell({ children, ctx, setCtx }: { children: ReactNode; ctx: Ctx
   }, [])
   return (
     <div className="min-h-dvh">
-      <aside data-tour="menu" className="bg-sidebar fixed inset-y-0 left-0 z-30 hidden w-[248px] border-r lg:block"><SidebarBody onNav={() => {}} /></aside>
+      <aside data-tour="menu" className="bg-sidebar pt-safe pb-safe fixed inset-y-0 left-0 z-30 hidden w-[248px] border-r lg:block"><SidebarBody onNav={() => {}} /></aside>
       <ComposeHost />
       <NewMessageHost />
       <MailReaderHost />
