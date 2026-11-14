@@ -81,12 +81,17 @@ export interface ScheduleSettings {
   days: number[]; urgent_on_days_off: boolean; off_dates: string[]
   /** a day off = a day off from work: Work-only digests pause, private ones run */
   off_work_only?: boolean
-  sweep_request: { at: string; by: string } | null
+  sweep_request: { at: string; by: string; worlds?: ('work' | 'private')[] } | null
+  /** "In an hour": the one-off sweep the owner asked for from the offer on Today */
+  sweep_later?: { at: string; asked: string; by: string } | null
+  /** "Offer a sweep outside digest hours" and the kinds of gap it is not offered in (day-5 = Saturdays, evening, …) */
+  sweep_offer?: { on: boolean; off_kinds: string[] }
 }
 export interface ScheduleInfo {
   schedule: ScheduleSettings
   status: { digests: boolean; urgent: boolean; reason: string | null; vacation_until: string | null; work_paused?: boolean }
   sweep: { at: string; by: string; fired_at: string | null } | null
+  later?: { at: string; asked: string; by: string } | null
   wait: string
   /** the next digest that will really run (scheduler.next_digest) – the line at the top of Today; null = none scheduled */
   next?: { at: string; label: string; worlds: ('work' | 'private')[] } | null

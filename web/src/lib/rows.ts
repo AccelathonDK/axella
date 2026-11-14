@@ -5,4 +5,6 @@ export interface RowApi {
   reply?: () => void; preview?: () => void
   /** the left swipe's label when it isn't "Tomorrow 07:00" (Now · Next · Later: "Not now") */
   snoozeLabel?: string
+  /** a row that can only go away (the sweep offer): the left swipe dismisses it */
+  dismiss?: () => void
 }

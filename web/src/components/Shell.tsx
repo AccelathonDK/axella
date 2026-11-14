@@ -31,6 +31,7 @@ import { ArchiveHost, openArchive } from '@/components/Projects'
 import { KnowledgeHost, KnowledgeIcon } from '@/components/Knowledge'
 import { NOTE_KEY, NoteHost, NoteIcon, useNoteShortcut } from '@/components/Notes'
 import { openNote, useNotesOwner } from '@/lib/notes'
+import { anyOn, useFeatures } from '@/lib/features'
 import { STATE_COLOR, stateOf, usePlan } from '@/lib/plan'
 import { needsCheck, openKnowledge, useKnowledge } from '@/lib/knowledge'
 import { AskHost, AskIcon, openAsk } from '@/components/Ask'
@@ -115,6 +116,8 @@ function SidebarBody({ onNav }: { onNav: () => void }) {
   const kb = useKnowledge()
   const notesOwner = useNotesOwner(ax.apiOk)
   const plan = usePlan(!!notesOwner && ax.apiOk)
+  const feats = useFeatures(ax.apiOk)                            // What Axella handles: a feature that is off leaves the menu
+  const on = (...ids: string[]) => anyOn(feats, ...ids)
   const kbTodo = (kb || []).filter(e => e.status === 'suggested' || needsCheck(e)).length   // waiting for your OK
   const items = ax.current?.data.items || []
   const open = (f: (i: any) => boolean) => items.filter(i => !ax.isHandled(i.id) && inCtx(i) && f(i)).length
@@ -133,31 +136,31 @@ function SidebarBody({ onNav }: { onNav: () => void }) {
         <NavItem icon={BriefingIcon} label="Briefing" tour="briefing" active={view.kind === 'briefing' && !view.focus} onClick={() => nav({ kind: 'briefing' })} />
         <NavItem icon={ListTodo} label="To do" tour="todo" count={ax.tasks.filter(t => t.status !== 'done' && taskInCtx(t, ctx)).length} active={view.kind === 'todo'} onClick={() => nav({ kind: 'todo' })} />
         <NavItem icon={CalendarDays} label="Calendar" count={open(i => i.section === 'cal')} active={view.kind === 'calendar' || (view.kind === 'briefing' && view.focus === 'cal')} onClick={() => nav({ kind: 'calendar' })} />
-        {ax.apiOk && <NavItem icon={MeetingIcon} label="Meetings" active={view.kind === 'meetings' || view.kind === 'meeting'} onClick={() => nav({ kind: 'meetings' })} />}
-        {ax.apiOk && <NavItem icon={TripsIcon} label="Trips" active={view.kind === 'trips'} onClick={() => nav({ kind: 'trips' })} />}
+        {ax.apiOk && on('meeting_prep') && <NavItem icon={MeetingIcon} label="Meetings" active={view.kind === 'meetings' || view.kind === 'meeting'} onClick={() => nav({ kind: 'meetings' })} />}
+        {ax.apiOk && on('trips') && <NavItem icon={TripsIcon} label="Trips" active={view.kind === 'trips'} onClick={() => nav({ kind: 'trips' })} />}
       </div>
       {lg && ax.apiOk && <div className="space-y-0.5">
         <div className="ax-label px-2.5 pb-1">Do</div>
         <NavItem icon={AskIcon} label="Ask Axella" onClick={() => { onNav(); openAsk() }} />
         <NavItem icon={MailPlus} label="New mail" onClick={() => { onNav(); openCompose() }} />
-        <NavItem icon={listening ? Square : Headphones} label={listening ? 'Stop reading' : 'Listen to the briefing'} onClick={() => toggleListen()} />
+        {on('spoken_digest') && <NavItem icon={listening ? Square : Headphones} label={listening ? 'Stop reading' : 'Listen to the briefing'} onClick={() => toggleListen()} />}
       </div>}
       <div className="space-y-0.5">
         <div className="ax-label px-2.5 pb-1">Tidy</div>
-        <NavItem icon={FolderInput} label="Mailbox" count={open(i => i.section === 'file')} active={view.kind === 'mailbox'} onClick={() => nav({ kind: 'mailbox' })} />
-        <NavItem icon={Receipt} label="Receipts" active={view.kind === 'receipts'} onClick={() => nav({ kind: 'receipts' })} />
+        {on('filing', 'mail_tidy') && <NavItem icon={FolderInput} label="Mailbox" count={open(i => i.section === 'file')} active={view.kind === 'mailbox'} onClick={() => nav({ kind: 'mailbox' })} />}
+        {on('receipts', 'bills', 'subscriptions', 'renewals') && <NavItem icon={Receipt} label="Receipts" active={view.kind === 'receipts'} onClick={() => nav({ kind: 'receipts' })} />}
       </div>
       <div className="space-y-0.5">
         <div className="ax-label px-2.5 pb-1">Library</div>
         {ax.apiOk && <NavItem icon={SearchIcon} label="Search" active={view.kind === 'search'} onClick={() => nav({ kind: 'search' })} />}
         {ax.apiOk && <NavItem icon={UserCircle} label="Contacts" active={view.kind === 'contacts'} onClick={() => nav({ kind: 'contacts' })} />}
-        {ax.apiOk && <NavItem icon={BriefingNavIcon} label="Topic briefs" active={view.kind === 'briefings'} onClick={() => nav({ kind: 'briefings' })} />}
-        {ax.apiOk && <NavItem icon={KnowledgeIcon} label="Knowledge" count={kbTodo || undefined} active={view.kind === 'knowledge'} onClick={() => nav({ kind: 'knowledge' })} />}
+        {ax.apiOk && on('topic_briefs') && <NavItem icon={BriefingNavIcon} label="Topic briefs" active={view.kind === 'briefings'} onClick={() => nav({ kind: 'briefings' })} />}
+        {ax.apiOk && on('knowledge') && <NavItem icon={KnowledgeIcon} label="Knowledge" count={kbTodo || undefined} active={view.kind === 'knowledge'} onClick={() => nav({ kind: 'knowledge' })} />}
         {ax.apiOk && notesOwner && <NavItem icon={NoteIcon} label="Notes" active={view.kind === 'notes'} onClick={() => nav({ kind: 'notes' })} tour="nav-notes" />}
         {ax.apiOk && <NavItem icon={BarChart3} label="Insights" active={view.kind === 'insights'} onClick={() => nav({ kind: 'insights' })} />}
         <NavItem icon={ArchiveIcon} label="Older digests" active={view.kind === 'archive'} onClick={() => nav({ kind: 'archive' })} />
       </div>
-      <div className="space-y-0.5">
+      {on('projects') && <div className="space-y-0.5">
         <div className="flex items-center justify-between px-2.5 pb-1">
           <button className="ax-label hover:text-ink" onClick={() => nav({ kind: 'projects' })}>Projects</button>
           <button aria-label="New project" className="text-ink-3 hover:text-ink" onClick={() => nav({ kind: 'projects' })}><Plus className="size-4" /></button>
@@ -185,7 +188,7 @@ function SidebarBody({ onNav }: { onNav: () => void }) {
         {archived > 0 && <NavItem icon={ArchiveIcon} label="Archived" count={archived} active={view.kind === 'project' && ax.projects.find(x => x.id === view.id)?.status === 'archived'}
           onClick={() => { go({ kind: 'projects' }); onNav(); setTimeout(() => document.getElementById('archived')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80) }} />}
         {sugg > 0 && <NavItem icon={Sparkles} label={<span>Suggested</span>} count={sugg} onClick={() => nav({ kind: 'projects' })} />}
-      </div>
+      </div>}
     </nav>
   )
 }

@@ -7,7 +7,9 @@ and by the digest guard. Shape:
    "urgent_on_days_off": false,        # keep the P0 checks running on days off
    "off_work_only": false,             # a day off = a day off from work: Work-only digests pause, private ones run
    "off_dates": ["YYYY-MM-DD", ...],   # single days off (holidays)
-   "sweep_request": {"at": iso, "by": login} | null}
+   "sweep_request": {"at": iso, "by": login, "worlds"?: [...]} | null,
+   "sweep_later": {"at": iso, "asked": iso, "by": login} | null,    # "In an hour": a one-off sweep the owner asked for
+   "sweep_offer": {"on": true, "off_kinds": ["day-5", "evening", ...]}}   # "Offer a sweep outside digest hours"
 A run that starts the on-demand digest writes state/sweep-fired.json {"request_at": <sweep_request.at>, "at": iso}.
 """
 import datetime
@@ -18,9 +20,13 @@ import threading
 
 LOCK = threading.Lock()
 DEFAULT = {'vacation': {'on': False, 'mode': 'urgent', 'from': None, 'until': None},
-           'days': [0, 1, 2, 3, 4, 5, 6], 'urgent_on_days_off': False, 'off_work_only': False, 'off_dates': [], 'sweep_request': None}
+           'days': [0, 1, 2, 3, 4, 5, 6], 'urgent_on_days_off': False, 'off_work_only': False, 'off_dates': [], 'sweep_request': None,
+           'sweep_later': None, 'sweep_offer': {'on': True, 'off_kinds': []}}
 DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 WEEKDAY = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+WORLDS = ('private', 'work')
+OFFER_KIND = re.compile(r'^(day-[0-6]|evening|morning|daytime)$')   # the kinds of gap a sweep offer can be stopped for
+LATER_MIN = 60
 IMMEDIATE = None    # set by the action service: () -> True when the local scheduler picks sweeps up at once
 
 
@@ -42,6 +48,9 @@ class Schedule:
         out = json.loads(json.dumps(DEFAULT))
         out.update({k: v for k, v in d.items() if k in DEFAULT})
         out['vacation'] = {**DEFAULT['vacation'], **(d.get('vacation') or {})}
+        so = d.get('sweep_offer') if isinstance(d.get('sweep_offer'), dict) else {}
+        out['sweep_offer'] = {'on': bool(so.get('on', True)),
+                              'off_kinds': [k for k in (so.get('off_kinds') or []) if isinstance(k, str) and OFFER_KIND.match(k)]}
         return out
 
     def _save(self, d):
@@ -85,6 +94,27 @@ class Schedule:
         except (FileNotFoundError, json.JSONDecodeError):
             fired = {}
         return {**req, 'fired_at': fired.get('at') if fired.get('request_at') == req['at'] else None}
+
+    def later(self):
+        """The one-off "In an hour" sweep, or None."""
+        lt = self.load().get('sweep_later')
+        return lt if isinstance(lt, dict) and lt.get('at') else None
+
+    def later_take(self, at):
+        """Clear the one-off sweep once the scheduler has picked it up (only the one it saw)."""
+        with LOCK:
+            d = self.load()
+            if (d.get('sweep_later') or {}).get('at') == at:
+                d['sweep_later'] = None
+                self._save(d)
+
+    @staticmethod
+    def worlds_ok(w):
+        if w is None:
+            return None
+        if not isinstance(w, list) or not w or not set(w) <= set(WORLDS):
+            raise Bad('worlds must be work, private or both')
+        return sorted(set(w))
 
     @staticmethod
     def wait_text(now=None, general=False):
@@ -132,6 +162,13 @@ class Schedule:
                 if 'off_dates' in p:
                     dates = sorted({str(x) for x in p['off_dates'] if DATE.match(str(x))})
                     d['off_dates'] = [x for x in dates if x >= (datetime.date.today() - datetime.timedelta(days=7)).isoformat()][:100]
+                if 'sweep_offer_on' in p:
+                    d['sweep_offer']['on'] = bool(p['sweep_offer_on'])
+                if 'sweep_offer_off_kinds' in p:
+                    ks = p['sweep_offer_off_kinds']
+                    if not isinstance(ks, list) or not all(isinstance(k, str) and OFFER_KIND.match(k) for k in ks):
+                        raise Bad('bad sweep offer exception')
+                    d['sweep_offer']['off_kinds'] = sorted(set(ks))
                 self._save(d)
                 return 'saved'
             if action == 'sweep_request':
@@ -139,10 +176,24 @@ class Schedule:
                 if s and not s.get('fired_at'):
                     return {'pending_since': s['at'], 'message': 'A sweep is already requested. ' + self.wait_text()}
                 d['sweep_request'] = {'at': datetime.datetime.now().astimezone().isoformat(timespec='seconds'), 'by': login}
+                w = self.worlds_ok(p.get('worlds'))
+                if w:
+                    d['sweep_request']['worlds'] = w
                 self._save(d)
                 return {'pending_since': d['sweep_request']['at'], 'message': self.wait_text()}
             if action == 'sweep_cancel':
                 d['sweep_request'] = None
+                self._save(d)
+                return 'cancelled'
+            if action == 'sweep_later':            # one fixed delay – no time from the dashboard, no other task
+                if d.get('sweep_later'):
+                    return {'at': d['sweep_later']['at'], 'message': 'A sweep is already planned.'}
+                now = datetime.datetime.now().astimezone().replace(microsecond=0)
+                d['sweep_later'] = {'at': (now + datetime.timedelta(minutes=LATER_MIN)).isoformat(), 'asked': now.isoformat(), 'by': login}
+                self._save(d)
+                return {'at': d['sweep_later']['at']}
+            if action == 'sweep_later_cancel':
+                d['sweep_later'] = None
                 self._save(d)
                 return 'cancelled'
             raise Bad('unknown action')

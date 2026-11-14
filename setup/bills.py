@@ -201,6 +201,33 @@ def details_differ(ref, last):
     return any(new[k] and last.get(k) and new[k] != last[k] for k in ('iban', 'account', 'fi_creditor'))
 
 
+SAME_BILL_DAYS = 21                  # a pro forma and its invoice, or a bill sent twice: due (or dated) this close together
+
+
+def same_bill(doc, bill, bill_doc=None):
+    """Is this document the bill a To do already holds? Same payee (vendor key), same amount and currency, due (or dated)
+    within SAME_BILL_DAYS of each other, and not two different invoice numbers – e.g. a pro forma followed by the real
+    invoice, or the same invoice in a reply. A monthly bill for the same amount is ~30 days apart and stays a card."""
+    b = bill or {}
+    o = bill_doc or {}
+    vk = b.get('vendor_key') or o.get('vendor_key')
+    if not vk or doc.get('vendor_key') != vk:
+        return False
+    amt = b.get('amount') if b.get('amount') is not None else o.get('amount')
+    if doc.get('amount') is None or amt is None:
+        return False
+    if (doc.get('currency') or '').upper() != (b.get('currency') or o.get('currency') or '').upper():
+        return False
+    if abs(float(doc['amount']) - float(amt)) > 0.005:
+        return False
+    a, c = _day(doc.get('due') or doc.get('date')), _day(o.get('due') or o.get('date'))
+    if a and c and abs((a - c).days) > SAME_BILL_DAYS:
+        return False
+    if not (a and c):
+        return False                         # can't tell how far apart they are: better a card than a hidden bill
+    return True
+
+
 def is_candidate(doc, today):
     if doc.get('hidden') or doc.get('paid') or doc.get('kind') not in KINDS:
         return False
@@ -363,14 +390,21 @@ class Bills:
                 'account': doc.get('account'), 'message_id': doc.get('message_id') or mid, 'deep_link': doc.get('deep_link'),
                 'subject': doc.get('subject'), 'attachments': list(doc.get('attachments') or [])[:6], 'ctx': doc.get('ctx')}
 
-    def suggestions(self, docs, today=None, known=frozenset()):
-        """The suggested cards. known: e-mail addresses in Contacts (a known sender is never a "first bill")."""
+    def suggestions(self, docs, today=None, known=frozenset(), tasks=()):
+        """The suggested cards. known: e-mail addresses in Contacts (a known sender is never a "first bill"). tasks: the
+        To do list – a document that is the same bill as a bill To do (same_bill) is no card: it's already there. A paid
+        (done) bill still hides its pro forma or copy, but not a reminder – a reminder after paying is worth a look."""
         today = today or datetime.date.today()
         d = self.load()
+        held = [(t, docs.get((t.get('bill') or {}).get('document') or '') or {}) for t in tasks or ()
+                if isinstance(t.get('bill'), dict)]
         out = []
         for mid, e in d['docs'].items():
             doc = docs.get(mid)
             if e.get('status') == 'suggested' and doc and is_candidate(doc, today):
+                if any(same_bill(doc, t['bill'], bd) and (t.get('status') != 'done' or doc.get('kind') != 'reminder')
+                       for t, bd in held if (t.get('bill') or {}).get('document') != mid):
+                    continue
                 out.append(self.card(mid, doc, e, docs, known, d.get('payees')))
         out.sort(key=lambda c: (c.get('due') or '9999', c.get('date') or ''))
         return out

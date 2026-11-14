@@ -1,7 +1,10 @@
 import { PrivacyCard } from '@/components/Privacy'
+import { offerKindText } from '@/components/SweepOffer'
 import { OutboundCard } from '@/components/Outbound'
 import { BlocksSettingsCard } from '@/components/Blocks'
 import { PlanSettingsCard } from '@/components/Plan'
+import { HandlesIcon, HandlesSettings } from '@/components/Handles'
+import { anyOn, useFeatures } from '@/lib/features'
 import { BackupCard } from '@/components/Backup'
 import { useFab } from '@/components/Tour'
 import { CalmSetupCard } from '@/components/CalmSetup'
@@ -52,6 +55,8 @@ export function PauseBanner() {
 /* ---------- Settings: an overview, one page per area ---------- */
 interface Area { page: SettingsPage; icon: any; title: string; line: string; intro: string }
 const AREAS: Area[] = [
+  { page: 'handles', icon: HandlesIcon, title: 'What Axella handles', line: 'Pick what Axella helps with – the rest is switched off and hidden',
+    intro: 'Your choices, card by card. Switching something off stops its work and hides it; its data is kept. More shows each card’s own switches.' },
   { page: 'schedule', icon: CalendarDays, title: 'Schedule', line: 'When Axella reads your mail and writes digests – and when it stays quiet',
     intro: 'The digest times, days off and vacation. On paused days scheduled runs stop straight away – nothing is read and nothing is pushed. "Run sweep now" in the menu makes an extra digest any time.' },
   { page: 'calendar', icon: CalendarDays, title: 'Calendar', line: 'Meeting services and who invitations go from',
@@ -150,14 +155,19 @@ export function SettingsView() {
   return <Guard key={page || 'overview'} title={area?.title}>{area ? <SettingsPageView area={area} /> : <SettingsOverview />}</Guard>
 }
 
+/* a Settings area that belongs to a feature leaves the list while that feature is off */
+const AREA_FEATURES: Partial<Record<SettingsPage, string[]>> = { calls: ['call_agent'], bookkeeping: ['receipts'], mailbox: ['mail_tidy'],
+  away: ['back_from_away'] }
+
 function SettingsOverview() {
-  const { go } = useApp()
+  const { go, ax } = useApp()
+  const feats = useFeatures(ax.apiOk)
   const status = useAreaStatus()
   return <div className="space-y-4">
     <div><h1 className="text-xl font-semibold tracking-tight">Settings</h1>
       <p className="text-muted-foreground text-sm">Pick an area. Everything here is stored on your Mac mini.</p></div>
     <nav data-settings-nav aria-label="Settings areas" className="bg-card divide-y overflow-hidden rounded-lg border">
-      {AREAS.map(a => <button key={a.page} onClick={() => go({ kind: 'settings', page: a.page })}
+      {AREAS.filter(a => !AREA_FEATURES[a.page] || anyOn(feats, ...AREA_FEATURES[a.page]!)).map(a => <button key={a.page} onClick={() => go({ kind: 'settings', page: a.page })}
         className="hover:bg-bg-2 flex w-full items-center gap-3 px-4 py-3 text-left transition-colors">
         <span className="bg-bg-2 text-ink-2 flex size-9 shrink-0 items-center justify-center rounded-md"><a.icon className="size-[18px]" /></span>
         <span className="min-w-0 flex-1">
@@ -203,6 +213,7 @@ function SettingsPageView({ area }: { area: Area }) {
       : area.page === 'reports' ? <ReportsCard />
       : area.page === 'notifications' ? <CalmSetupCard />
       : area.page === 'rules' ? <RulesCard />
+      : area.page === 'handles' ? <HandlesSettings />
       : area.page === 'appearance' ? <SectionCard id="look" icon={SunMoon} title="Appearance" sub="Light, dark, or follow this device"><div className="space-y-4 p-4"><ThemePicker /><TourFabSetting /></div></SectionCard>
       : <><SystemPage /><BackupCard /></>}
   </div>
@@ -316,10 +327,30 @@ function SchedulePage() {
           <p>Starts a full digest outside the schedule, e.g. in the evening. It also runs on paused days – you asked for it.</p>
           <p>{ax.schedule?.wait || 'You get a push when it’s ready.'} Follow it under <b className="text-foreground">Runs</b>.</p>
           <SweepStatus />
+          <SweepOfferSetting s={s} />
         </div>
       </SectionCard>
     </div>
   )
+}
+
+/** "Offer a sweep outside digest hours" and the kinds of gap you stopped it for (sweep_offer.py) */
+function SweepOfferSetting({ s }: { s: ScheduleSettings }) {
+  const { ax } = useApp()
+  const so = s.sweep_offer || { on: true, off_kinds: [] }
+  const set = (patch: object, msg: string) => ax.act('schedule_set', patch, ['schedule']).then(() => toast(msg), (e: any) => toast.error('Failed: ' + e.message))
+  return <div className="text-foreground space-y-2 border-t pt-3">
+    <label className="flex items-start gap-3">
+      <Checkbox className="mt-0.5" checked={so.on} data-sweep-offer-setting=""
+        onCheckedChange={c => set({ sweep_offer_on: !!c }, c ? 'Sweeps offered outside digest hours' : 'No sweep offers')} />
+      <span>Offer a sweep outside digest hours<span className="text-muted-foreground block text-xs">When you have Axella open on a day without digests or in the evening, and something new has arrived, Today offers a sweep: now, in an hour, or not. Never a push, never without a tap.</span></span>
+    </label>
+    {so.off_kinds.length > 0 && <div className="flex flex-wrap gap-1.5 pl-7">
+      {so.off_kinds.map(k => <span key={k} className="bg-bg-2 inline-flex items-center gap-1 rounded-sm py-1 pr-1.5 pl-2.5 text-xs font-medium">Not {offerKindText(k)}
+        <button aria-label={'Offer again ' + offerKindText(k)} onClick={() => set({ sweep_offer_off_kinds: so.off_kinds.filter(x => x !== k) }, 'Offered ' + offerKindText(k) + ' again')}>
+          <X className="text-muted-foreground hover:text-destructive size-3.5" /></button></span>)}
+    </div>}
+  </div>
 }
 
 function SweepStatus() {
@@ -353,7 +384,7 @@ export function useSweep() {
 }
 
 /** Bookkeepers / platforms that receipts may be forwarded to – the closed circle */
-function RecipientsCard() {
+export function RecipientsCard() {
   const { ax } = useApp()
   const [rows, setRows] = useState<Recipient[]>(ax.recipients)
   const [dirty, setDirty] = useState(false)

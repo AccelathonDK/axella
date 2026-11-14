@@ -1,6 +1,8 @@
-/* Answer a calendar invitation from the mail it came in: Accept / Maybe / Decline. Axella sends the organizer the
-   standard calendar reply through Mail – Send's second tap and 6 s undo, like every send – and on Accept or Maybe puts
-   the meeting in the calendar you pick. setup/invites.py, axella-actions.py invite_respond. */
+/* Answer a calendar invitation from the mail it came in: Accept / Maybe / Decline – Send's second tap and 6 s undo,
+   like every send. When the invitation is in Calendar on the Mac mini (Exchange, iCloud), Axella presses the answer
+   there, so it leaves Calendar's "New" and the account's server replies (setup/calendar_answer.py). Otherwise Axella
+   sends the organizer the standard calendar reply through Mail and, on Accept or Maybe, puts the meeting in the
+   calendar you pick. setup/invites.py, axella-actions.py invite_respond. */
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { CalendarCheck, CalendarDays, ExternalLink, Loader2 } from '@/components/ax-icons'
@@ -43,7 +45,7 @@ function InviteSheet({ it, onClose }: { it: Item; onClose: () => void }) {
   const [err, setErr] = useState('')
   const [resp, setResp] = useState<Resp>('accepted')
   const [cal, setCal] = useState('')
-  const [done, setDone] = useState<{ response: Resp; calendar?: string | null } | null>(null)
+  const [done, setDone] = useState<{ response: Resp; calendar?: string | null; via?: string } | null>(null)
   const [busy, setBusy] = useState(false)
   useEffect(() => {
     get<{ invite: Invite }>(`invite?account=${encodeURIComponent(it.account!)}&message_id=${encodeURIComponent(it.message_id!)}`)
@@ -61,7 +63,8 @@ function InviteSheet({ it, onClose }: { it: Item; onClose: () => void }) {
       calendar: resp === 'declined' ? null : cal || null, in_calendar: inv!.in_calendar, confirm: 'send', send_id: newSendId() }, ['state'])
     const res = r?.result || {}
     if (res.pending) { onClose(); return }               // Mail is still busy – the background toast reports how it ends
-    setDone({ response: resp, calendar: res.calendar })
+    setDone({ response: resp, calendar: res.calendar, via: res.via })
+    if (res.via === 'calendar') { toast.success(`${LABEL[resp]} in Calendar – ${who} gets the answer from your calendar`); return }
     toast.success(`${LABEL[resp]} sent to ${who}${res.calendar && !/^(not added|all-day|already)/.test(res.calendar) ? ' – in ' + (inv!.calendars.find(c => c.name === res.calendar)?.label || res.calendar) : ''}`)
   }
   async function prepare() {
@@ -93,7 +96,8 @@ function InviteSheet({ it, onClose }: { it: Item; onClose: () => void }) {
           {join && <Button size="pill" variant="outline" asChild><a href={join} target="_blank" rel="noopener noreferrer"><ExternalLink />Join link</a></Button>}
           {inv.cancelled ? <p className="text-dawn text-sm">This meeting was cancelled – there is nothing to answer.</p>
           : done ? <div className="space-y-2 border-t pt-3">
-              <p className="text-sm">{LABEL[done.response]} sent to {org?.name || who}.{done.calendar && done.response !== 'declined' ? ' ' + (done.calendar.startsWith('not added') ? 'The calendar: ' + done.calendar + '.' : done.calendar === 'already in the calendar' ? 'It was already in your calendar.' : done.calendar.startsWith('all-day') ? 'All-day events: add it in Calendar.' : 'It\'s in ' + (inv.calendars.find(c => c.name === done.calendar)?.label || done.calendar) + '.') : ''}</p>
+              {done.via === 'calendar' ? <p className="text-sm" data-invite-done="calendar">{LABEL[done.response]} in Calendar on the Mac mini – it has left Calendar's New list, and {org?.name || who} gets the answer from your calendar.</p>
+              : <p className="text-sm">{LABEL[done.response]} sent to {org?.name || who}.{done.calendar && done.response !== 'declined' ? ' ' + (done.calendar.startsWith('not added') ? 'The calendar: ' + done.calendar + '.' : done.calendar === 'already in the calendar' ? 'It was already in your calendar.' : done.calendar.startsWith('all-day') ? 'All-day events: add it in Calendar.' : 'It\'s in ' + (inv.calendars.find(c => c.name === done.calendar)?.label || done.calendar) + '.') : ''}</p>}
               <div className="flex flex-wrap gap-2">
                 {done.response !== 'declined' && !inv.all_day && <Button size="pill" variant="outline" disabled={busy} onClick={prepare}><CalendarCheck />Prepare the meeting</Button>}
                 <Button size="pill" variant="ghost" className="ml-auto" onClick={onClose}>Close</Button>
@@ -104,7 +108,7 @@ function InviteSheet({ it, onClose }: { it: Item; onClose: () => void }) {
                 {(['accepted', 'tentative', 'declined'] as Resp[]).map(r => <button key={r} role="radio" aria-checked={resp === r} onClick={() => setResp(r)}
                   className={cn('flex-1 rounded px-3 py-1.5', resp === r ? (r === 'declined' ? 'bg-card text-danger shadow-sm font-medium' : 'bg-fjord text-on-fjord font-medium') : 'text-ink-2')}>{LABEL[r]}</button>)}
               </div>
-              {resp !== 'declined' && (inv.in_calendar ? <p className="text-dawn text-[13px]">Already in your calendar – you have probably answered this elsewhere. Sending again gives the organizer a second answer; nothing is added to the calendar.</p>
+              {resp !== 'declined' && (inv.in_calendar ? <p className="text-ink-2 text-[13px]">Already in your calendar. If Calendar still lists it under New, Axella answers it there; if you answered it before, the organizer gets a second answer. Nothing is added to the calendar.</p>
                 : inv.all_day ? <p className="text-ink-3 text-[13px]">An all-day event – add it in Calendar after answering.</p>
                 : <label className="flex items-center gap-2 text-sm"><span className="text-ink-2">Put it in</span>
                     <NativeSelect value={cal} onChange={e => setCal(e.target.value)} aria-label="Calendar" className="h-8 w-auto text-[13px]">
@@ -113,7 +117,7 @@ function InviteSheet({ it, onClose }: { it: Item; onClose: () => void }) {
               {!inv.check?.no_reply && inv.check?.mismatch && <p className="text-dawn text-[13px]" role="alert">Check who this goes to: the mail came from {inv.check.mail_domain}, but your answer goes to {inv.check.organizer_domain}. Send only if you know {org?.email}.</p>}
               <div className="flex items-center gap-2">
                 <SendButton to={who} onSend={send} disabled={!ax.apiOk || !!inv.check?.no_reply} />
-                <span className="text-ink-3 text-[12px]">{LABEL[resp]} goes to {org?.email} from {inv.me?.email || inv.from_address}.</span>
+                <span className="text-ink-3 text-[12px]">{LABEL[resp]} goes to {org?.email} from {inv.me?.email || inv.from_address} – answered in Calendar when it is there.</span>
               </div>
             </div>}
         </>}

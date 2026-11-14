@@ -19,6 +19,7 @@ import datetime
 import glob
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -58,7 +59,7 @@ SECRETS = ('state/voice-token', 'state/voice-lookup-key', 'state/report-install-
            'state/privacy.json', 'state/private-inbox.json', 'state/private-notified.json', 'state/signal-store.json',
            'state/private-calls.json', 'state/private-calls/**', 'state/contacts-book.json', 'state/people-notes.json', 'state/keep-in-touch.json', 'state/bills.json', 'state/trip-checklists.json', 'state/recurring.json', 'state/renewals.json', 'state/blocks.json', 'state/away.json', 'state/backup.json', 'state/export/**', 'pre-restore-*/**', 'state/project-mail.json', 'state/online-meetings.json', 'state/calendar-invites.json',
            'state/deleted/**', 'state/macuse-calendar-tools.json', 'state/meetings/**',
-           'state/scheduled.json', 'state/scheduled-files/**', 'state/promises.json', 'notes/**', 'state/planner.json')   # who is private is not for Claude either
+           'state/scheduled.json', 'state/scheduled-files/**', 'state/promises.json', 'notes/**', 'state/planner.json', 'state/markets.db', 'data/**')   # who is private is not for Claude either
 
 # the apps' own message stores – runs see mail and messages only through Macuse (filtered) and the exports
 APP_STORES = ('~/Library/Messages/**', '~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/**',
@@ -94,6 +95,10 @@ COMPOSE_KEEP_DAYS = 14
 DIGEST_GRACE = 20 * 60      # a digest slot missed (service down) still starts up to 20 min late
 P0_GRACE = 10 * 60
 RETRY_AFTER = 3 * 60
+# Claude Code's sign-in on the Mac mini expired or was revoked: every run fails at once until the owner signs in again
+AUTH_RE = re.compile(r'Failed to authenticate|OAuth (session|token)[^\n]{0,40}(expired|revoked|refresh)|run /login|Invalid API key|'
+                     r'authentication_error|not logged in|Please log in', re.I)
+AUTH_REASON = 'Claude is signed out on the Mac mini – in Terminal there: claude, then /login'
 ALERT_REMIND = 6 * 3600          # a problem that is still there gets one reminder this often, no more
 ALERT_LOCK = threading.Lock()
 KEEP_DAYS = 30         # runs and their logs are kept this long
@@ -164,9 +169,11 @@ class Scheduler:
         self.prompt_dir = os.path.join(base, 'setup', 'local-tasks')
         self.queue = []                 # [{task, slot, trigger, not_before, attempt, retry_of}]
         self.harvest = None             # kb_harvest.Harvest – set by axella-actions.py
+        self.features = None            # features.Features – set by axella-actions.py (What Axella handles)
         self.briefings = None           # briefings.Briefings – set by axella-actions.py
         self.wrap_facts = None          # worlds -> the week wrap's facts (wrap.facts) – set by axella-actions.py
         self.away_due = None            # date -> the absence to brief now (away.Away.due) or None – set by axella-actions.py
+        self.sweep_scope = None         # now -> the worlds of a sweep that runs now (sweep_offer.scope) – set by axella-actions.py
         self.away_facts = None          # job -> the briefing's facts (away.facts), written before its run – axella-actions.py
         self.learned_note = None        # () -> the "Learned rules" block (learned.Learned.prompt_note) – axella-actions.py
         self.ask_notes = None           # (ask id, login) -> notes copied for this Ask run – none unless the owner asks
@@ -199,7 +206,7 @@ class Scheduler:
         """The retry for a digest the restart interrupted: only a first attempt, started in the last 90 minutes, of a
         digest task – with the same scope and wrap choice (kept on the run as "job")."""
         spec = TASKS.get(r.get('task')) or {}
-        if spec.get('kind') != 'digest' or r.get('attempt') != 1 or r.get('trigger') not in ('schedule', 'manual', 'sweep'):
+        if spec.get('kind') != 'digest' or r.get('attempt') != 1 or r.get('trigger') not in ('schedule', 'manual', 'sweep', 'later'):
             return None
         try:
             started = datetime.datetime.fromisoformat(str(r.get('started')))
@@ -302,6 +309,39 @@ class Scheduler:
                 t += step
         return sorted(out, key=lambda x: x[2])
 
+    def due_digests(self, day):
+        """[(slot_id, 'HH:MM', label)] of the digests that really run on `day`, by the rules _tick uses: digests on, the
+        enabled slots and their days, the schedule's vacation and days off at that time, and a work-only slot on a paused
+        work day. For the missing-digest alert (digest_guard), so it never warns about a slot that isn't due."""
+        cfg = self.load()
+        if not cfg.get('enabled'):
+            return []
+        by_sid, out = {s['id']: s for s in cfg['digests']}, []
+        for sid, task, hm, label in self.slots_for(day, cfg):
+            if TASKS[task]['kind'] != 'digest':
+                continue
+            at = datetime.datetime.combine(day, datetime.time(_hm(hm) // 60, _hm(hm) % 60))
+            st = self.sched.status(at)
+            if st.get('digests') and scope_mod.effective(scope_mod.worlds_of(by_sid.get(sid) or {}), st.get('work_paused')):
+                out.append((sid, hm, label))
+        return out
+
+    def last_digest_run(self):
+        """The newest digest or sweep run (running, finished or failed – any that read the mail), or None.
+        The sweep offer's gap starts with it."""
+        with LOCK:
+            d = self._load_runs()
+        for r in reversed(d['runs']):
+            if (TASKS.get(r.get('task')) or {}).get('kind') == 'digest' and r.get('status') in ('running', 'ok', 'failed'):
+                return r
+        return None
+
+    def digest_busy(self):
+        """A digest or sweep running or waiting."""
+        with LOCK:
+            return bool((self.current and TASKS[self.current['run']['task']]['kind'] == 'digest') or
+                        any(TASKS[j['task']]['kind'] == 'digest' for j in self.queue))
+
     def next_digest(self, now=None):
         """The next digest that will really run, by the same rules _tick uses: the slots, the schedule's vacation and
         days off at that time (schedule.status), and a work-only slot on a paused work day. {'at', 'label', 'worlds'},
@@ -372,11 +412,15 @@ class Scheduler:
                     not (self.current and self.current['run']['task'] == 'on-demand'):
                 with open(os.path.join(self.state_dir, 'sweep-fired.json'), 'w', encoding='utf-8') as f:
                     json.dump({'request_at': sweep['at'], 'at': _iso(), 'by': 'scheduler'}, f)
-                self.queue.insert(0, {'task': 'on-demand', 'slot': None, 'trigger': 'sweep', 'not_before': 0, 'attempt': 1})
+                job = {'task': 'on-demand', 'slot': None, 'trigger': 'sweep', 'not_before': 0, 'attempt': 1}
+                if sweep.get('worlds'):
+                    job['worlds'] = sweep['worlds']
+                self.queue.insert(0, job)
                 self.cv.notify_all()
             if not cfg['enabled']:
                 self._save_runs(d)
                 return
+            self._later_sweep(d, now)
             status = self.sched.status(now.replace(tzinfo=None))
             today = now.date()
             mins = now.hour * 60 + now.minute + now.second / 60
@@ -442,6 +486,32 @@ class Scheduler:
             self._auto_feedback_summary(d, now)
             self._auto_kb(d, now)
             self._save_runs(d)
+
+    # ---------- "In an hour": the one-off sweep the owner asked for (state/schedule.json sweep_later) ----------
+    def _later_sweep(self, d, now):
+        try:
+            lt = self.sched.later()
+            if not lt or datetime.datetime.fromisoformat(lt['at']) > now:
+                return
+            self.sched.later_take(lt['at'])
+            label = 'Sweep · %s (you asked)' % lt['at'][11:16]
+            ran = any((TASKS.get(r.get('task')) or {}).get('kind') == 'digest' and r.get('status') in ('running', 'ok')
+                      and (r.get('started') or '') > lt['asked'] for r in d['runs'])
+            if ran or any(TASKS[j['task']]['kind'] == 'digest' for j in self.queue) or \
+                    (self.current and TASKS[self.current['run']['task']]['kind'] == 'digest'):
+                d['runs'].append({'id': _now().strftime('%Y%m%d-%H%M%S-') + 'on-demand', 'task': 'on-demand', 'label': label,
+                                  'slot': None, 'trigger': 'later', 'attempt': 1, 'status': 'skipped', 'started': _iso(),
+                                  'ended': _iso(), 'reason': 'skipped – a digest ran meanwhile', 'summary': None, 'usage': None,
+                                  'model': None, 'ref': None, 'briefing': None, 'job': {}})
+                return
+            job = {'task': 'on-demand', 'slot': None, 'label': label, 'trigger': 'later', 'not_before': 0, 'attempt': 1}
+            w = self.sweep_scope(now) if self.sweep_scope else None     # its scope is decided now, not when it was asked
+            if w:
+                job['worlds'] = w
+            self.queue.insert(0, job)
+            self.cv.notify_all()
+        except Exception as e:
+            self.log.write('%s later sweep: %s\n' % (_iso(), str(e)[:200]))
 
     # ---------- briefings: research/news briefs at their own times ----------
     def _queue_brief(self, bid, name, trigger, slot=None):
@@ -760,8 +830,6 @@ class Scheduler:
     def anything_new(self):
         """(True, why) if a message arrived since the last urgent check, or if anything can't be checked (fail-open).
         The :00 check always runs (calendar problems and P0 reminders can't be seen from here)."""
-        import sqlite3
-        home = os.path.expanduser('~')
         try:
             with open(os.path.join(self.state_dir, 'p0-last-check.txt'), encoding='utf-8') as f:
                 raw = f.read()
@@ -769,6 +837,16 @@ class Scheduler:
             since = datetime.datetime.fromisoformat(ts)
         except Exception:
             return True, 'no last check time'
+        counts, why = self.count_new(since)
+        if counts is None:
+            return True, why
+        return sum(counts.values()) > 0, why
+
+    def count_new(self, since):
+        """({stream: n}, why) of messages received since `since` (aware datetime) in the streams Axella reads – counted
+        here from the apps' own indexes and the export files, no Claude. (None, why) when a stream can't be checked."""
+        import sqlite3
+        home = os.path.expanduser('~')
         since_unix = since.timestamp()
         counts = {}
         # Mail: Mail's own index (read-only copy of the numbers – Mail itself is not touched)
@@ -781,7 +859,7 @@ class Scheduler:
                 (int(since_unix),)).fetchone()[0]
             con.close()
         except Exception as e:
-            return True, 'mail not checkable: %s' % str(e)[:80]
+            return None, 'mail not checkable: %s' % str(e)[:80]
         # iMessage/SMS: Messages' database (dates are nanoseconds since 2001-01-01)
         try:
             con = sqlite3.connect('file:%s?mode=ro' % (home + '/Library/Messages/chat.db'), uri=True, timeout=5)
@@ -789,13 +867,13 @@ class Scheduler:
                                              (int((since_unix - 978307200) * 1e9),)).fetchone()[0]
             con.close()
         except Exception as e:
-            return True, 'messages not checkable: %s' % str(e)[:80]
+            return None, 'messages not checkable: %s' % str(e)[:80]
         # WhatsApp: the export file the service writes every 2 minutes
         try:
             with open(os.path.join(self.state_dir, 'whatsapp.json'), encoding='utf-8') as f:
                 wa = json.load(f)
             if not wa.get('ok'):
-                return True, 'whatsapp export not ok'
+                return None, 'whatsapp export not ok'
             n = 0
             for c in wa.get('chats', []):
                 for m in c.get('messages', []):
@@ -806,7 +884,7 @@ class Scheduler:
                         pass
             counts['whatsapp'] = n
         except Exception as e:
-            return True, 'whatsapp not checkable: %s' % str(e)[:80]
+            return None, 'whatsapp not checkable: %s' % str(e)[:80]
         # Signal: only chats the owner keeps "normal" are in signal.json – private ones never start a run
         try:
             with open(os.path.join(self.state_dir, 'signal.json'), encoding='utf-8') as f:
@@ -816,8 +894,7 @@ class Scheduler:
                                        if not m.get('from_me') and datetime.datetime.fromisoformat(m['at']) > since)
         except (OSError, ValueError, KeyError):
             pass                                     # not set up: nothing to check
-        why = ', '.join('%s %d' % kv for kv in counts.items())
-        return sum(counts.values()) > 0, why
+        return counts, ', '.join('%s %d' % kv for kv in counts.items())
 
     # ---------- the worker ----------
     def worker(self):
@@ -835,10 +912,34 @@ class Scheduler:
             except Exception as e:
                 self.log.write('%s scheduler run: %s\n' % (_iso(), str(e)[:300]))
 
+    def _feature_off(self, job):
+        """The feature this job belongs to, when the owner has switched it off – such a job is never started."""
+        if not self.features:
+            return None
+        try:
+            import features as _f
+            fid = _f.feature_of_task(job['task'], job)
+            return fid if fid and not self.features.owner_on(fid) else None
+        except Exception:
+            return None
+
     def _run(self, job):
         task = job['task']
         spec = TASKS[task]
         rid = _now().strftime('%Y%m%d-%H%M%S-') + task
+        off = self._feature_off(job)
+        if off:                                    # recorded on Runs, never started: "skipped – feature off (X)"
+            import features as _f
+            with LOCK:
+                d = self._load_runs()
+                d['runs'].append({'id': rid, 'task': task, 'label': job.get('label') or spec['label'], 'slot': job.get('slot'),
+                                  'trigger': job['trigger'], 'attempt': job['attempt'], 'status': 'skipped', 'started': _iso(),
+                                  'ended': _iso(), 'reason': 'skipped – feature off (%s)' % _f.BY_ID[off]['label'], 'summary': None,
+                                  'usage': None, 'model': None, 'ref': job.get('ref'), 'briefing': job.get('briefing'), 'job': {}})
+                if job.get('slot'):
+                    d['slots'][job['slot']] = rid
+                self._save_runs(d)
+            return
         logp = os.path.join(self.run_dir, rid + '.log')
         run = {'id': rid, 'task': task, 'label': job.get('label') or spec['label'], 'slot': job.get('slot'),
                'trigger': job['trigger'], 'attempt': job['attempt'], 'status': 'running', 'started': _iso(),
@@ -919,6 +1020,8 @@ class Scheduler:
                 status = 'failed'
                 reason = (result or {}).get('subtype') if result and result.get('subtype') != 'success' else None
                 reason = reason or ((err_lines[-1].strip()[:200]) if err_lines else 'exit code %s' % proc.returncode)
+                if AUTH_RE.search(' '.join([summary or '', (result or {}).get('result') or ''] + err_lines[-20:])):
+                    reason = AUTH_REASON               # a retry can't fix a sign-in: no retry, one clear message
             elif spec['kind'] in ('digest', 'p0') and not stats.get('macuse_calls'):
                 status, reason = 'failed', 'Macuse (Mail/Messages/Calendar) not available – %s tools' % stats.get('macuse_tools', 0)
             elif spec['kind'] == 'briefing' and self.briefings.check(job['ref']):
@@ -975,7 +1078,9 @@ class Scheduler:
         w('%s in %dm%02ds%s' % (status.upper(), dur // 60, dur % 60, (' – ' + reason) if reason else ''))
         lf.close()
         self._update_run(rid, status=status, reason=reason, ended=_iso(), summary=summary, usage=usage)
-        if status == 'failed' and not job.get('no_retry'):
+        if status == 'failed' and reason == AUTH_REASON:
+            self._alert_failed(task, run['label'], reason)
+        elif status == 'failed' and not job.get('no_retry'):
             if job['attempt'] == 1:
                 with LOCK:
                     self.queue.append({**job, 'attempt': 2, 'trigger': 'retry', 'not_before': time.time() + RETRY_AFTER})
@@ -989,6 +1094,8 @@ class Scheduler:
     # not one per failed run. Runs that fail because Macuse is down share one alert. state/run-alerts.json keeps it
     # across restarts: task names, labels, times and the short reason only.
     def _alert_key(self, task, reason):
+        if reason == AUTH_REASON:
+            return 'claude-auth'                       # every task fails the same way: one alert for all of them
         return 'macuse' if (reason or '').startswith('Macuse (') else task
 
     def _alerts(self):
@@ -1028,13 +1135,15 @@ class Scheduler:
                     self._alerts_save(alerts)
                     return
                 a['pushed'] = now
-                title = 'Axella: Macuse still not available' if key == 'macuse' else 'Axella: %s still failing' % label
+                title = ('Axella: Macuse still not available' if key == 'macuse' else 'Axella: Claude still signed out on the Mac mini'
+                         if key == 'claude-auth' else 'Axella: %s still failing' % label)
                 body = 'Since %s, %d failed runs – %s' % (time.strftime('%a %H:%M', time.localtime(a['since'])), a['count'],
                                                           a['reason'] or 'see Runs in the dashboard')
             else:
                 a = alerts[key] = {'since': now, 'pushed': now, 'count': 1, 'tasks': [task], 'label': label,
                                    'reason': (reason or '')[:150]}
-                title = 'Axella: Macuse not available' if key == 'macuse' else 'Axella: %s failed twice' % label
+                title = ('Axella: Macuse not available' if key == 'macuse' else 'Axella: Claude signed out on the Mac mini'
+                         if key == 'claude-auth' else 'Axella: %s failed twice' % label)
                 body = (reason or 'see Runs in the dashboard') + ' – you get one more message when it works again'
             self._alerts_save(alerts)
         self._alert_push({'title': title, 'body': body[:150], 'tag': 'axella-alert-' + key, 'url': '/axella/?v=runs'})
@@ -1043,14 +1152,15 @@ class Scheduler:
         now = time.time() if now is None else now
         with ALERT_LOCK:
             alerts = self._alerts()
-            done = [(k, a) for k, a in alerts.items() if task in (a.get('tasks') or [])]
+            done = [(k, a) for k, a in alerts.items() if task in (a.get('tasks') or []) or k == 'claude-auth']   # any run that works proves the sign-in
             if not done:
                 return
             for k, _ in done:
                 del alerts[k]
             self._alerts_save(alerts)
         for k, a in done:
-            self._alert_push({'title': 'Axella: Macuse works again' if k == 'macuse' else 'Axella: %s works again' % a.get('label', k),
+            self._alert_push({'title': 'Axella: Macuse works again' if k == 'macuse' else 'Axella: Claude signed in again' if k == 'claude-auth'
+                              else 'Axella: %s works again' % a.get('label', k),
                               'body': 'Failed %d run(s) since %s – back to normal.' % (
                                   a.get('count', 1), time.strftime('%a %H:%M', time.localtime(a.get('since', now)))),
                               'tag': 'axella-alert-' + k, 'url': '/axella/?v=runs'})
@@ -1171,6 +1281,13 @@ class Scheduler:
             prompt += self._away_note(task, job or {})
         if spec['kind'] in ('digest', 'p0'):
             prompt += self._learned_note()
+        if spec['kind'] in ('digest', 'p0'):
+            prompt += self._setup_note(task)
+        if spec['kind'] in ('digest', 'p0', 'ask', 'compose', 'receipts') and self.features:
+            try:
+                prompt += self.features.prompt_note()      # what the owner switched off: left out of everything written
+            except Exception:
+                pass
         if spec['kind'] == 'feedback':
             return self._feedback_command(prompt, job)
         claude = self.claude_bin()
@@ -1194,6 +1311,11 @@ class Scheduler:
             reading = ['mail_get_messages', 'mail_get_attachment']
         if self._window_reading_unsafe():           # private chats: no reading of app windows, only the filtered exports
             reading = [t for t in reading if not t.startswith('computer_use_')]
+        chans = self._channels()
+        if not chans.get('imessage', True):        # iMessage and SMS not read (guided setup / Settings): no Messages tools
+            reading = [t for t in reading if not t.startswith('messages_')]
+        if not chans.get('whatsapp', True) or not chans.get('signal', True):
+            reading = [t for t in reading if not t.startswith('computer_use_')]   # no app windows either
         allowed += ['mcp__macuse__' + t for t in reading]
         never = ['mcp__macuse__' + t for t in MACUSE_NEVER] + ['WebFetch', 'WebSearch', 'Task', 'NotebookEdit']
         never += ['mcp__macuse__' + t for t in MACUSE_READ if t not in reading]
@@ -1203,6 +1325,17 @@ class Scheduler:
         never += ['Read(~/.ssh/**)', 'Read(~/Library/Keychains/**)', 'Read(~/.aws/**)', 'Read(~/.config/**)', 'Read(~/.claude/**)']
         never += ['Read(%s)' % p for p in APP_STORES]
         never += ['Read(/reports/**)', 'Read(/%s/reports/**)' % self.base]   # problem reports may hold a real screenshot
+        for ch, f in (('whatsapp', 'state/whatsapp.json'), ('signal', 'state/signal.json')):
+            if not chans.get(ch, True):            # a channel the owner chose not to have read: its export is denied
+                never += ['%s(/%s)' % (t, f) for t in ('Read', 'Grep', 'Glob')] + \
+                         ['%s(/%s)' % (t, os.path.join(self.base, f)) for t in ('Read', 'Grep', 'Glob')]
+        if self.features:                           # the data of switched-off features is not read either
+            try:
+                for rel in self.features.denied_paths():
+                    never += ['%s(/%s)' % (t, rel) for t in ('Read', 'Grep', 'Glob')] + \
+                             ['%s(/%s)' % (t, os.path.join(self.base, rel)) for t in ('Read', 'Grep', 'Glob')]
+            except Exception:
+                pass
         if spec['kind'] != 'ask':                  # Notes: only an Ask run reads its own filtered copy of them
             never += ['%s(/state/ask-notes/**)' % t for t in ('Read', 'Grep', 'Glob')] + \
                      ['%s(/%s/state/ask-notes/**)' % (t, self.base) for t in ('Read', 'Grep', 'Glob')]
@@ -1212,6 +1345,38 @@ class Scheduler:
                '--mcp-config', self.run_mcp_file(), '--strict-mcp-config',
                '--allowedTools', ','.join(allowed), '--disallowedTools', ','.join(never)]
         return cmd, model
+
+    def _channels(self):
+        try:
+            import axprofile
+            c = axprofile.load().get('channels')
+            return c if isinstance(c, dict) else {}
+        except Exception:
+            return {}
+
+    def _setup_note(self, task):
+        """What the owner chose in the guided setup: which mail accounts and channels to read, and – for the very first
+        digest – how far back to look. Only once the setup has been used (state/about.json); otherwise AXELLA.md rules."""
+        try:
+            with open(os.path.join(self.state_dir, 'about.json'), encoding='utf-8') as f:
+                ab = json.load(f)
+        except (OSError, ValueError):
+            return ''
+        import axprofile
+        cfg = axprofile.load()
+        out = ''
+        accs = [(n, (a or {}).get('kind') or 'private') for n, a in (cfg.get('accounts') or {}).items()]
+        if accs:
+            out += ('\n\nMail accounts the owner chose to have read (Settings → What Axella handles): %s. Leave any other mailbox out.'
+                    % ', '.join('%s (%s)' % x for x in accs))
+        names = {'imessage': 'iMessage and SMS', 'whatsapp': 'WhatsApp', 'signal': 'Signal'}
+        off = [names[k] for k, v in self._channels().items() if k in names and v is False]
+        if off:
+            out += ' Not read, by the owner\'s choice: %s.' % ', '.join(off)
+        lb = ab.get('lookback')
+        if lb in (7, 14, 30) and not glob.glob(os.path.join(self.base, 'digests', '*.json')):
+            out += ' This is the very first digest: look back %d days.' % lb
+        return out
 
     def _privacy_strict(self, ch):
         import privacy
@@ -1639,7 +1804,8 @@ class Scheduler:
         today.sort(key=lambda x: x['time'])
         return {'config': cfg, 'tasks': {k: v['label'] for k, v in TASKS.items()}, 'current': cur, 'queue': queue,
                 'today': today, 'runs': d['runs'][-100:][::-1], 'kept_days': KEEP_DAYS, 'total_runs': len(d['runs']),
-                'history_from': (d['runs'][0].get('started') if d['runs'] else None), 'capped': len(d['runs']) >= RUNS_CAP, 'doctor': self._doctor_cached()}
+                'history_from': (d['runs'][0].get('started') if d['runs'] else None), 'capped': len(d['runs']) >= RUNS_CAP, 'doctor': self._doctor_cached(),
+                'later': self.sched.later() if self.sched else None}
 
     def _doctor_cached(self):
         try:

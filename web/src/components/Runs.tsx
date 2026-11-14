@@ -34,6 +34,8 @@ interface Overview {
   today: TodaySlot[]; runs: Run[]; kept_days?: number; total_runs?: number; history_from?: string | null; capped?: boolean
   doctor: { at?: string; claude?: string | null; claude_version?: string; api_key_set?: boolean; mcp_file?: boolean } | null
   peer_check_off?: boolean
+  /** "In an hour" from the sweep offer on Today: a one-off sweep that runs by itself */
+  later?: { at: string; asked: string; by: string } | null
 }
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -130,6 +132,9 @@ export function RunsView() {
           {cur && <Button size="pill" variant="outline" disabled={!!busy} onClick={() => act('run_cancel', { task: cur.task }, 'Stopping')}><Square />Stop</Button>}
         </div>
         {cur && <div className="border-t p-3"><LogView id={cur.id} live /></div>}
+        {o.later && <div className="flex items-center gap-2 border-t px-4 py-2 text-sm" data-runs-later="">
+          <Clock className="text-ink-3 size-4" /><span className="flex-1">Sweep · {hm(o.later.at)} (you asked)</span>
+          <Button size="pill" variant="outline" disabled={!!busy} onClick={() => act('sweep_later_cancel', {}, 'Cancelled')}>Cancel</Button></div>}
         {o.queue.length > 0 && <div className="text-muted-foreground border-t px-4 py-2 text-xs">Waiting: {o.queue.map(q => q.label + (q.not_before ? ` (retry ${hm(q.not_before)})` : '')).join(' · ')}</div>}
       </Card>
 

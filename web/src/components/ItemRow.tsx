@@ -4,7 +4,7 @@ import { FocusButtons } from '@/components/Blocks'
 import { PlanButton } from '@/components/Plan'
 import { renewalsNext } from '@/components/Receipts'
 import { AlarmClock, ArrowDownRight, Briefcase, CalendarCheck, CalendarPlus, Check, ClipboardCopy, ExternalLink, FolderInput, Hash, Home,
-  BellOff, ChevronDown, Eye, Linkedin, Recurring, Star, Loader2, Paperclip, Mail, MessageCircle, MoreHorizontal, PencilLine, Reply, SquarePlus, Trash2, Undo2, UserCircle, axi } from '@/components/ax-icons'
+  BellOff, ChevronDown, Eye, Linkedin, Recurring, Star, Loader2, Paperclip, Mail, MessageCircle, MoreHorizontal, PencilLine, Reply, SquarePlus, Trash2, Undo2, UserCircle, X, axi } from '@/components/ax-icons'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input, NativeSelect } from '@/components/ui/input'
@@ -130,7 +130,8 @@ export function useRowSwipe(api: { current: RowApi }) {
     const a = api.current
     const right = a.done ? { fn: a.done, label: 'Done', icon: Check, tone: 'done' as const } : a.file ? { fn: a.file, label: 'Move to ' + a.fileLabel, icon: FolderInput, tone: 'file' as const } : null
     const fileLeft = a.file && right?.tone !== 'file' ? { fn: a.file, label: 'Move to ' + a.fileLabel, icon: FolderInput, tone: 'file' as const } : null
-    const snooze = a.snooze ? { fn: a.snooze, label: a.snoozeLabel || 'Tomorrow 07:00', icon: AlarmClock, tone: 'snooze' as const } : null
+    const snooze = a.snooze ? { fn: a.snooze, label: a.snoozeLabel || 'Tomorrow 07:00', icon: AlarmClock, tone: 'snooze' as const }
+      : a.dismiss ? { fn: a.dismiss, label: 'Dismiss', icon: X, tone: 'snooze' as const } : null
     const left = -d > w * 0.55 && snooze && fileLeft ? fileLeft : snooze || fileLeft
     return d > 0 ? right && { ...right, side: 'right' as const } : left && { ...left, side: 'left' as const }
   }

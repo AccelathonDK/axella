@@ -54,5 +54,9 @@
   a tour (Today, the header and menu, Trips, Meetings and a prep, Calendar, a project, Settings → System) keeps its markers
   or updates the tour's steps. `node web/tests/tour-anchors.test.mjs` (in run-tests) checks the markers; walk the tours
   with `web/tests/tours.cjs` by hand. Tours only point – never an action, a sheet or a call to the Mac mini.
+- **What Axella handles** (`setup/features.py`): every feature ships with a registry entry and a card – its POST actions,
+  GET routes, scheduler tasks, threads and data paths (or it is listed as core). `setup/tests/test_features.py` fails on an
+  action, route or task that is in neither. Background loops idle with `_bg('<feature>')`; Today cards and menu entries
+  hide with `<On f="…">` / `anyOn`. Tests that load axella-actions.py point `A.FEAT` at a test install, never the real one.
 - Dashboard: `cd web && npm run deploy`. Action service: restart with launchctl after changing `setup/*.py`.
 - The web root and access list live outside this repo in `../www/` (see README).

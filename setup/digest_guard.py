@@ -1,7 +1,9 @@
 """Missing-digest alert: if a scheduled digest hasn't appeared 60 minutes after its slot, push one warning.
 
-Runs as a thread inside axella-actions.py. Keep SCHEDULE in sync with "## Schedule" in AXELLA.md.
-The hourly P0 check is deliberately not watched: it only writes a file when something is urgent.
+Runs as a thread inside axella-actions.py. Which digests are due comes from the scheduler itself
+(Scheduler.due_digests – the slots, days and times in Settings → Schedule, vacation, days off and a paused work day),
+so the alert never warns about a slot that isn't set up for that day.
+The urgent check is deliberately not watched: it only writes a file when something is urgent.
 """
 import datetime
 import json
@@ -9,23 +11,14 @@ import os
 import sys
 import time
 
-# weekday numbers: Mon=0 … Sun=6
-SCHEDULE = [
-    ('07:30', {0, 1, 2, 3, 4, 5, 6}, 'Morning'),
-    ('11:30', {0, 1, 2, 3, 4}, 'Midday'),
-    ('15:30', {0, 1, 2, 3, 4}, 'Afternoon'),
-    ('20:30', {6}, 'Week-ahead'),
-]
 GRACE = datetime.timedelta(minutes=60)     # runs start ~10 min late and can take 30 min
 WINDOW = datetime.timedelta(hours=4)       # don't warn about slots older than this (e.g. after a restart)
 EARLY = datetime.timedelta(minutes=15)     # a digest written up to 15 min before the slot still counts
 
 
-def slots(now):
-    """Today's slots that are due for checking now: (key, label, slot time)."""
-    for hm, days, label in SCHEDULE:
-        if now.weekday() not in days:
-            continue
+def slots(now, due):
+    """Today's due slots that are ready for checking now: (key, label, slot time). due(date) -> [(id, 'HH:MM', label)]."""
+    for _sid, hm, label in due(now.date()):
         h, m = map(int, hm.split(':'))
         at = now.replace(hour=h, minute=m, second=0, microsecond=0)
         if at + GRACE <= now < at + WINDOW:
@@ -49,7 +42,7 @@ def digest_since(digests_dir, since):
     return False
 
 
-def check(now, digests_dir, state_file, send):
+def check(now, digests_dir, state_file, send, due):
     """One pass. Returns the slot keys alerted in this pass."""
     try:
         with open(state_file, encoding='utf-8') as f:
@@ -58,11 +51,11 @@ def check(now, digests_dir, state_file, send):
         st = {}
     done = set(st.get('alerted', []))
     fired = []
-    for key, label, at in slots(now):
+    for key, label, at in slots(now, due):
         if key in done or digest_since(digests_dir, at - EARLY):
             continue
         send({'title': f'⚠ Axella – {at:%H:%M} digest missing',
-              'body': f'{label} digest hasn\'t arrived 1 hour after {at:%H:%M}. Check the Axella scheduled task in Claude.',
+              'body': f'{label} hasn\'t arrived 1 hour after {at:%H:%M}. See Runs in Axella.',
               'tag': 'axella-missing', 'url': '/axella/'})
         done.add(key)
         fired.append(key)
@@ -74,11 +67,11 @@ def check(now, digests_dir, state_file, send):
     return fired
 
 
-def run(digests_dir, state_file, send, has_subscribers, log=sys.stderr):
+def run(digests_dir, state_file, send, has_subscribers, due, log=sys.stderr):
     while True:
         try:
             if has_subscribers():
-                for k in check(datetime.datetime.now(), digests_dir, state_file, send):
+                for k in check(datetime.datetime.now(), digests_dir, state_file, send, due):
                     log.write(f'{datetime.datetime.now():%Y-%m-%dT%H:%M:%S} digest guard: alerted {k}\n')
         except ImportError:
             pass

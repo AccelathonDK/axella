@@ -116,14 +116,16 @@ ok(s.feedback_pull() == 'skipped: no export token in the Keychain', 'pull: exit 
 open(os.path.join(base, 'setup', 'feedback_pull.py'), 'w').write('print("2 new")\n')
 ok(s.feedback_pull() == 'ok: 2 new', 'pull: ok with count')
 d = {'runs': [], 'slots': {}}
-s._auto_feedback_pull(d, datetime.datetime(2026, 11, 3, 3, 0).astimezone())
+day = datetime.date.today()                      # today: _save_runs drops slots older than 8 days (a fixed date expired)
+s._auto_feedback_pull(d, datetime.datetime(day.year, day.month, day.day, 3, 0).astimezone())
 ok(not d['slots'], 'before 03:20: nothing')
 with S.LOCK:
-    s._auto_feedback_pull(d, datetime.datetime(2026, 11, 3, 3, 25).astimezone())
+    s._auto_feedback_pull(d, datetime.datetime(day.year, day.month, day.day, 3, 25).astimezone())
     s._save_runs(d)
-ok(d['slots'].get('feedback-pull@2026-11-03 03:20') == 'running', '03:20: started')
+slot = 'feedback-pull@%s 03:20' % day.isoformat()
+ok(d['slots'].get(slot) == 'running', '03:20: started')
 time.sleep(1.5)
-ok(s._load_runs()['slots'].get('feedback-pull@2026-11-03 03:20') == 'ok: 2 new', 'slot shows the result')
+ok(s._load_runs()['slots'].get(slot) == 'ok: 2 new', 'slot shows the result')
 
 shutil.rmtree(base, ignore_errors=True)
 print('PASS' if not fails else 'FAIL (%d)' % fails)

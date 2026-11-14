@@ -106,7 +106,7 @@ export function useAxella(): Ax {
       if (attempt < 3) setTimeout(() => { loadProjects(attempt + 1) }, [2000, 5000, 15000][attempt]); else setProjectsError(true)
     }
   }, [])
-  const loadSchedule = useCallback(async () => { try { const j = await get('schedule'); setSchedule({ schedule: j.schedule, status: j.status, sweep: j.sweep, wait: j.wait, next: j.next }) } catch { setSchedule(null) } }, [])
+  const loadSchedule = useCallback(async () => { try { const j = await get('schedule'); setSchedule({ schedule: j.schedule, status: j.status, sweep: j.sweep, later: j.later, wait: j.wait, next: j.next }) } catch { setSchedule(null) } }, [])
   const loadDocuments = useCallback(async () => { try { const j = await get('documents'); setDocuments(j.documents || []); setRecipients(j.recipients || []); setVendorRules(j.vendor_rules || {}) } catch { /* keep */ } }, [])
   const loadOverrides = useCallback(async () => { try { setOverrides({ ...EMPTY_OV, ...(await get('overrides')).overrides }) } catch { /* keep */ } }, [])
   // the profile names the accounts (workplace labels instead of "Exchange"): if it doesn't come – the service was

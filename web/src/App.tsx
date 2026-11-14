@@ -32,6 +32,9 @@ import { BriefingsView } from '@/components/Briefings'
 import { MeetingPrepView, MeetingsView } from '@/components/Meetings'
 import { PersonView } from '@/components/People'
 import { TripsView } from '@/components/Trips'
+import { SetupView } from '@/components/Setup'
+import { FeatureOff } from '@/components/Handles'
+import { useFeatures, VIEW_FEATURE, anyOn, type CardId } from '@/lib/features'
 
 const SETTINGS_ANCHOR: Record<string, SettingsPage> = { reminders: 'reminders', callcfg: 'calls', privacy: 'privacy', reports: 'reports',
   recipients: 'bookkeeping', vac: 'schedule', days: 'schedule', sched: 'schedule', sweep: 'schedule', ooo: 'away', cleanupcfg: 'mailbox', look: 'appearance' }
@@ -54,6 +57,7 @@ function viewFromUrl(): View {
   if (q.get('v') === 'knowledge') return { kind: 'knowledge' }
   if (q.get('v') === 'notes') return { kind: 'notes' }
   if (q.get('v') === 'week') return { kind: 'week' }
+  if (q.get('v') === 'setup') return { kind: 'setup', card: (q.get('card') || undefined) as CardId | undefined }
   if (q.get('v') === 'search') return { kind: 'search', q: q.get('q') || '' }
   if (q.get('v') === 'contacts') return { kind: 'contacts' }
   if (q.get('v') === 'calendar') return { kind: 'calendar' }
@@ -100,7 +104,7 @@ export default function App() {
       const el = document.getElementById('sec-' + anchor)
       if (el && Math.abs(el.getBoundingClientRect().top) > 80) el.scrollIntoView({ behavior: ms === 120 ? 'smooth' : 'auto', block: 'start' })
     }, ms))
-    const u = new URL(location.href); u.searchParams.delete('p'); u.searchParams.delete('v'); u.searchParams.delete('t'); u.searchParams.delete('f'); u.searchParams.delete('q'); u.searchParams.delete('b'); u.searchParams.delete('s'); u.searchParams.delete('m'); u.searchParams.delete('c')
+    const u = new URL(location.href); u.searchParams.delete('p'); u.searchParams.delete('v'); u.searchParams.delete('t'); u.searchParams.delete('f'); u.searchParams.delete('q'); u.searchParams.delete('b'); u.searchParams.delete('s'); u.searchParams.delete('m'); u.searchParams.delete('c'); u.searchParams.delete('card')
     if (v.kind === 'settings' && v.page) u.searchParams.set('s', v.page)
     if (v.kind === 'project') u.searchParams.set('p', v.id)
     if (v.kind === 'briefing') { u.searchParams.set('v', 'briefing'); if (v.focus) u.searchParams.set('f', v.focus) }
@@ -111,6 +115,7 @@ export default function App() {
     if (v.kind === 'trips') u.searchParams.set('v', 'trips')
     if (v.kind === 'meeting') { u.searchParams.set('v', 'meeting'); u.searchParams.set('m', v.id) }
     if (v.kind === 'person') { u.searchParams.set('v', 'person'); u.searchParams.set('c', v.id) }
+    if (v.kind === 'setup') { u.searchParams.set('v', 'setup'); if (v.card) u.searchParams.set('card', v.card) }
     if (v.kind === 'search') { u.searchParams.set('v', 'search'); if (v.q) u.searchParams.set('q', v.q) }
     if (v.kind === 'projects' || v.kind === 'archive' || v.kind === 'settings' || v.kind === 'receipts' || v.kind === 'runs' || v.kind === 'status' || v.kind === 'insights' || v.kind === 'knowledge' || v.kind === 'notes' || v.kind === 'week' || v.kind === 'contacts' || v.kind === 'calendar' || v.kind === 'activity') u.searchParams.set('v', v.kind)
     history.pushState(null, '', u)
@@ -138,10 +143,17 @@ export default function App() {
       open('p0') + calls.filter(c => c.priority === 'p0').length, ax.current.meta.date)
   }, [ax.current, ax.state, ax.calls, ax.tasks, ax.isHandled, ax.stateReady])
 
+  // What Axella handles: a new install starts with the guided setup; a page whose feature is off is a quiet "off" page
+  const feats = useFeatures(ax.apiOk)
+  useEffect(() => { if (feats?.setup.needed && view.kind === 'today') go({ kind: 'setup' }) }, [feats?.setup.needed])   // eslint-disable-line react-hooks/exhaustive-deps
+  const offIds = VIEW_FEATURE[view.kind]
+  const offPage = offIds && feats && !anyOn(feats, ...offIds)
+    ? <FeatureOff label={feats.features[offIds[0]]?.label || 'This feature'} owner_off={offIds.every(i => feats.features[i]?.owner_off)} /> : null
+
   return (
     <AppContext.Provider value={value}>
       <Shell ctx={ctx} setCtx={setCtx}>
-        {!ax.profileReady ? null : <Fragment key={profileVersion()}>{view.kind === 'today' ? <NowView /> : view.kind === 'briefing' ? <TodayView /> : view.kind === 'todo' ? <TodoView key={view.only || 'all'} tab={view.tab || 'tasks'} only={view.only} /> : view.kind === 'mailbox' ? <MailboxView tab={view.tab || 'filing'} /> : view.kind === 'projects' ? <ProjectsOverview /> : view.kind === 'archive' ? <ArchiveView /> : view.kind === 'settings' ? <SettingsView /> : view.kind === 'receipts' ? <ReceiptsView /> :  view.kind === 'runs' ? <RunsView /> : view.kind === 'status' ? <StatusView /> : view.kind === 'insights' ? <InsightsView /> : view.kind === 'knowledge' ? <KnowledgeView /> : view.kind === 'notes' ? <NotesView /> : view.kind === 'week' ? <WeekView /> : view.kind === 'project' ? <ProjectView id={view.id} /> : view.kind === 'search' ? <SearchView q0={view.q} /> : view.kind === 'contacts' ? <ContactsView /> : view.kind === 'calendar' ? <CalendarView /> : view.kind === 'activity' ? <ActivityView /> : view.kind === 'briefings' ? <BriefingsView open={view.id} /> : view.kind === 'meetings' ? <MeetingsView /> : view.kind === 'trips' ? <TripsView /> : view.kind === 'meeting' ? <MeetingPrepView key={view.id} id={view.id} /> : view.kind === 'person' ? <PersonView key={view.id} id={view.id} /> : null}</Fragment>}
+        {!ax.profileReady ? null : <Fragment key={profileVersion()}>{offPage ? offPage : view.kind === 'setup' ? <SetupView key={view.card || 'flow'} only={view.card} /> : view.kind === 'today' ? <NowView /> : view.kind === 'briefing' ? <TodayView /> : view.kind === 'todo' ? <TodoView key={view.only || 'all'} tab={view.tab || 'tasks'} only={view.only} /> : view.kind === 'mailbox' ? <MailboxView tab={view.tab || 'filing'} /> : view.kind === 'projects' ? <ProjectsOverview /> : view.kind === 'archive' ? <ArchiveView /> : view.kind === 'settings' ? <SettingsView /> : view.kind === 'receipts' ? <ReceiptsView /> :  view.kind === 'runs' ? <RunsView /> : view.kind === 'status' ? <StatusView /> : view.kind === 'insights' ? <InsightsView /> : view.kind === 'knowledge' ? <KnowledgeView /> : view.kind === 'notes' ? <NotesView /> : view.kind === 'week' ? <WeekView /> : view.kind === 'project' ? <ProjectView id={view.id} /> : view.kind === 'search' ? <SearchView q0={view.q} /> : view.kind === 'contacts' ? <ContactsView /> : view.kind === 'calendar' ? <CalendarView /> : view.kind === 'activity' ? <ActivityView /> : view.kind === 'briefings' ? <BriefingsView open={view.id} /> : view.kind === 'meetings' ? <MeetingsView /> : view.kind === 'trips' ? <TripsView /> : view.kind === 'meeting' ? <MeetingPrepView key={view.id} id={view.id} /> : view.kind === 'person' ? <PersonView key={view.id} id={view.id} /> : null}</Fragment>}
       </Shell>
       <Toaster theme={dark ? 'dark' : 'light'} position="bottom-center" offset={56} mobileOffset={{ bottom: 84 }} toastOptions={{ className: '!rounded-md !text-sm !font-sans !shadow-float !border-line' }} />
     </AppContext.Provider>

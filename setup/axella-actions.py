@@ -24,6 +24,7 @@ Fixed list of actions, nothing else:
   POST recipients_set, document_forward, vendor_auto_forward – forward receipts to the recipients list ONLY (forwarding.py)
   GET  documents / POST document_set, document_hide – receipts & invoices per vendor (documents.py)
   GET  schedule / POST schedule_set, sweep_request, sweep_cancel – vacation mode, days off, on-demand sweep (schedule.py)
+  GET  sweep_offer / POST sweep_offer {act, gap}, sweep_later_cancel – the sweep offered outside digest hours (owner only, sweep_offer.py)
   GET  attachment – one attachment of a mail (saved by Mail to a temp folder, served, deleted)
   GET  message – read-only preview of one mail (subject, sender, body text, attachment names)
   GET  projects, project_file / POST project_* and project_upload – notes, links, documents per project (projects.py)
@@ -53,6 +54,7 @@ import glob
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -78,6 +80,8 @@ PUSH_LAST_FILE = os.path.join(STATE_DIR, 'push-last.json')
 VAPID_FILE = os.path.join(STATE_DIR, 'vapid.json')
 # Web Push contact (VAPID "sub"): actions-config.json "push_contact"
 CONFIG_FILE = os.path.join(HERE, 'actions-config.json')
+ABOUT_FILE = os.path.join(STATE_DIR, 'about.json')          # the guided setup's own choices (work/private mode, look-back)
+CONFIG_LOCK = threading.Lock()
 ACCESS_FILE = os.path.join(os.path.dirname(BASE), 'www', 'access.json')
 PORT = int(os.environ.get('AXELLA_ACTIONS_PORT', '8788'))
 LOCK = threading.Lock()
@@ -145,7 +149,7 @@ def listen_segments():
     on = {b['id']: b.get('voice', True) for b in BRIEF.load()['briefings']}
     since = (_dt.datetime.now().astimezone() - _dt.timedelta(hours=36)).isoformat(timespec='seconds')
     for br in sorted(BRIEF.recent(since, 20), key=lambda x: x.get('at') or ''):
-        if not on.get(br.get('briefing'), True):
+        if not on.get(br.get('briefing'), True) or not _bg('topic_briefs'):   # Topic briefs off: Listen leaves them out
             continue
         key = 'b-%s-%s' % (br['briefing'], br['id'])
         lang = br.get('language') if br.get('language') in ('da', 'en') else None
@@ -923,6 +927,9 @@ def scan_commitments(now=None):
 def _commit_loop():
     time.sleep(60)
     while True:
+        if not _bg('to_answer'):                  # switched off in What Axella handles: idle, nothing done
+            time.sleep(60)
+            continue
         try:
             scan_commitments()
         except Exception as e:
@@ -1098,6 +1105,9 @@ def _scheduled_loop():
     """Every 30 s: send what is due. After the Mac mini was off, it sends what it missed and notes how late."""
     SCHED_SEND.recover()
     while True:
+        if not _bg('send_later'):                  # switched off in What Axella handles: idle, nothing done
+            time.sleep(60)
+            continue
         try:
             def note(x, status, err, late):
                 t = x.get('title') or ''
@@ -1175,6 +1185,27 @@ def invite_respond(p):
         last = next((x for x in reversed(sent) if x.get('key') == key and now - _sent_ts(x) < 600 and x.get('status') != 'failed'), None)
         if last and not p.get('force'):
             raise Bad('this answer was sent a few minutes ago already')
+    # Answer in Calendar first: on Exchange and iCloud only that clears the invitation in the owner's own mailbox and
+    # sends the organizer the account's own reply. The reply mail below is only for invitations that aren't in
+    # Calendar at all – never both for one invitation (calendar_answer.py).
+    if (config().get('invites') or {}).get('answer_in_calendar', True):
+        import calendar_answer
+        try:
+            cr = calendar_answer.answer(osa, ev['summary'], (ev.get('organizer') or {}).get('name') or '',
+                                        invites.public(ev, [])['start'], resp)
+        except RuntimeError as e:                 # osascript timed out or failed: a button may have been pressed
+            cr = 'timeout' if 'did not answer' in str(e) else 'error'
+        if cr == calendar_answer.OK:
+            _invite_sent_log(key, 'calendar', p, org, invites.reply_subject(ev, resp), [])
+            return _invite_done(p, ev, resp, {'status': 'answered', 'via': 'calendar', 'to': org, 'response': resp, 'calendar': None})
+        if cr == 'unconfirmed':
+            raise Bad('%s was pressed in Calendar, but Calendar didn\'t confirm it – check the invitation in Calendar. '
+                      'Nothing else was sent.' % {'accepted': 'Accept', 'tentative': 'Maybe', 'declined': 'Decline'}[resp])
+        if cr == 'timeout':
+            raise Bad("Calendar didn't respond in time – check the invitation in Calendar. Nothing else was sent.")
+        if cr != calendar_answer.NOT_IN_CALENDAR:
+            raise Bad("Couldn't answer in Calendar – %s. Nothing was sent – answer it in Calendar on the Mac."
+                      % calendar_answer.REASONS.get(cr, "Calendar didn't respond"))
     tmp = tempfile.mkdtemp(prefix='ax-invite-', dir=OUTBOX_DIR if os.path.isdir(OUTBOX_DIR) else None)
     os.chmod(tmp, 0o700)
     path = os.path.join(tmp, 'invite.ics')
@@ -1190,13 +1221,7 @@ def invite_respond(p):
         if 'did not answer' not in str(e):       # Mail refused before sending: nothing went out
             status, err = 'failed', e
     finally:
-        with LOCK:
-            sent = load_json(SENT_FILE, [])
-            sent.append({'at': now_iso(), 'ts': time.time(), 'status': status, 'key': key, 'action': 'invite_respond',
-                         'account': p['account'], 'to': org, 'reply_to': p['message_id'],
-                         'subject': invites.reply_subject(ev, resp)[:200], 'item_id': p.get('item_id'), 'attachments': ['invite.ics']})
-            with open(SENT_FILE, 'w', encoding='utf-8') as f:
-                json.dump(sent[-1000:], f, ensure_ascii=False, indent=1)
+        _invite_sent_log(key, status, p, org, invites.reply_subject(ev, resp), ['invite.ics'])
         import shutil as _sh
         _sh.rmtree(tmp, ignore_errors=True)
     if err is not None:
@@ -1223,6 +1248,24 @@ def invite_respond(p):
                 calendar_view.invalidate()
             except Exception as e:
                 added = 'not added: %s' % str(e)[:120]
+    return _invite_done(p, ev, resp, {'status': 'sent', 'to': org, 'response': resp, 'calendar': added})
+
+
+def _invite_sent_log(key, status, p, org, subject, attachments):
+    """sent.json: every answer, by mail or in Calendar (status "calendar") – the "sent a few minutes ago" check and the
+    hourly cap read it."""
+    with LOCK:
+        sent = load_json(SENT_FILE, [])
+        sent.append({'at': now_iso(), 'ts': time.time(), 'status': status, 'key': key, 'action': 'invite_respond',
+                     'account': p['account'], 'to': org, 'reply_to': p['message_id'],
+                     'subject': subject[:200], 'item_id': p.get('item_id'), 'attachments': attachments})
+        with open(SENT_FILE, 'w', encoding='utf-8') as f:
+            json.dump(sent[-1000:], f, ensure_ascii=False, indent=1)
+
+
+def _invite_done(p, ev, resp, out):
+    """After an answer (mail or Calendar): the item is done, and so is the digest's calendar note about the same meeting."""
+    import invites
     if p.get('item_id'):
         set_state(p['item_id'], {'status': 'done', 'at': now_iso(), 'title': p.get('title', ''), 'how': 'invite:' + resp})
     # the digest's calendar note about the same meeting ("… not in the calendar") is handled too
@@ -1240,7 +1283,8 @@ def invite_respond(p):
                 handled.append(it['id'])
     except Exception:
         pass
-    return {'status': 'sent', 'to': org, 'response': resp, 'calendar': added, 'handled': handled}
+    out['handled'] = handled
+    return out
 
 
 STARTED_AT = time.time()
@@ -1375,6 +1419,12 @@ def system_status():
         late = overdue_digests(ov.get('today') or [], datetime.datetime.now())
         today = datetime.date.today().isoformat()
         failing, failed = run_failures(runs, today)
+        auth = load_json(os.path.join(STATE_DIR, 'run-alerts.json'), {}).get('claude-auth')
+        if isinstance(auth, dict):                       # every Claude run fails at once until the owner signs in again
+            add('Claude', 'signin', 'Claude sign-in', 'down',
+                'Signed out on the Mac mini since %s – %s' % (time.strftime('%a %H:%M', time.localtime(auth.get('since') or time.time())),
+                                                             plural(auth.get('count') or 1, 'run') + ' failed'),
+                'In Terminal on the Mac mini (SSH is fine): claude, then /login with the account Axella uses – then Run now in Runs and logs')
         if not cfg.get('enabled'):
             add('Claude', 'schedule', 'Schedule', 'off', 'The Mac mini does not run the schedule', 'Settings → Schedule: "Mac mini runs the schedule"')
         else:
@@ -1409,6 +1459,15 @@ def system_status():
         mail_up = None
     add('Sources', 'mail', 'Apple Mail', 'ok' if mail_up else 'down' if mail_up is False else 'unknown',
         'Running' if mail_up else 'Not running – Axella can\'t file, send or save drafts', None if mail_up else 'Open Mail on the Mac mini')
+    if (config().get('invites') or {}).get('answer_in_calendar', True):   # answering invitations in Calendar itself
+        try:
+            ax_ok = osa('tell application "System Events" to return UI elements enabled', timeout=10) == 'true'
+        except Exception:
+            ax_ok = None
+        add('Sources', 'calendar_answer', 'Answering invitations in Calendar', 'ok' if ax_ok else 'warn' if ax_ok is False else 'unknown',
+            'Accessibility allowed' if ax_ok else "No Accessibility permission – Accept / Decline can't be pressed in Calendar, so an "
+            "invitation that is in Calendar isn't answered from Axella" if ax_ok is False else "Couldn't check (System Events didn't answer)",
+            None if ax_ok else 'System Settings → Privacy & Security → Accessibility: allow Python (the same one as Full Disk Access, SETUP §3)')
     chat = os.path.expanduser('~/Library/Messages/chat.db')
     if os.path.exists(chat):
         add('Sources', 'imessage', 'Messages (iMessage/SMS)', 'ok' if os.access(chat, os.R_OK) else 'down',
@@ -1670,6 +1729,29 @@ def chat_media(pk):
 
 def config():
     return load_json(CONFIG_FILE, {})
+
+
+def _config_update(change):
+    """The guided setup writes the owner's own settings in setup/actions-config.json (not in git): a copy of the old file
+    goes to state/config-backups/ first (the last 20 kept), then the new one is written atomically, owner-only (0600)."""
+    with CONFIG_LOCK:
+        old = load_json(CONFIG_FILE, {})
+        new = json.loads(json.dumps(old))
+        change(new)
+        if new == old:
+            return new
+        bdir = os.path.join(STATE_DIR, 'config-backups')
+        os.makedirs(bdir, exist_ok=True)
+        if os.path.exists(CONFIG_FILE):
+            shutil.copy2(CONFIG_FILE, os.path.join(bdir, 'actions-config-%s.json' % datetime.datetime.now().strftime('%Y%m%d-%H%M%S-%f')))
+            for oldf in sorted(glob.glob(os.path.join(bdir, 'actions-config-*.json')))[:-20]:
+                os.remove(oldf)
+        tmp = CONFIG_FILE + '.tmp'
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(new, f, ensure_ascii=False, indent=2)
+        os.chmod(tmp, 0o600)
+        os.replace(tmp, CONFIG_FILE)
+        return new
 
 
 # the same pattern as web/src/lib/data.ts isNoReply: "noreply", "payments-noreply", "do_not_reply", "bounces+1" …
@@ -3161,7 +3243,8 @@ def push_watcher():
                     if unfinished(n):
                         break              # next round, once its run has ended (and the scope check has run)
                     try:
-                        SAFETY.scan_digest(n)
+                        if _bg('scam_check'):
+                            SAFETY.scan_digest(n)
                     except Exception as e:
                         sys.stderr.write('%s safety: %s\n' % (now_iso(), str(e)[:200]))
                     try:
@@ -3169,36 +3252,44 @@ def push_watcher():
                     except Exception as e:
                         sys.stderr.write('%s learned rules: %s\n' % (now_iso(), str(e)[:200]))
                     try:
-                        RECUR.add_to_digest(n)     # one quiet line in the morning digest for new subscription changes
+                        if _bg('subscriptions'):
+                            RECUR.add_to_digest(n)     # one quiet line in the morning digest for new subscription changes
                     except Exception as e:
                         sys.stderr.write('%s recurring: %s\n' % (now_iso(), str(e)[:200]))
                     try:
-                        BLOCKS.add_to_digest(DIGESTS_DIR, n, _block_events, _work_hours())   # at most one "hold a free block?"
+                        if _bg('blocks'):
+                            BLOCKS.add_to_digest(DIGESTS_DIR, n, _block_events, _work_hours())   # at most one "hold a free block?"
                     except Exception as e:
                         sys.stderr.write('%s blocks line: %s\n' % (now_iso(), str(e)[:200]))
                     try:
-                        _plan_digest(n)            # the focus question (morning), this week's focus (Sunday), the monthly check (Friday)
+                        if _bg('plan'):
+                            _plan_digest(n)            # the focus question (morning), this week's focus (Sunday), the monthly check (Friday)
                     except Exception as e:
                         sys.stderr.write('%s plan line: %s\n' % (now_iso(), str(e)[:200]))
                     try:
-                        RENEW.add_to_digest(DIGESTS_DIR, n)   # one line when a renewal reaches its lead time
+                        if _bg('renewals'):
+                            RENEW.add_to_digest(DIGESTS_DIR, n)   # one line when a renewal reaches its lead time
                     except Exception as e:
                         sys.stderr.write('%s renewals line: %s\n' % (now_iso(), str(e)[:200]))
                     try:
-                        _bills.add_to_digest(BILLS, DIGESTS_DIR, n, lambda: load_json(TASKS_FILE, []))   # bills due this week
+                        if _bg('bills'):
+                            _bills.add_to_digest(BILLS, DIGESTS_DIR, n, lambda: load_json(TASKS_FILE, []))   # bills due this week
                     except Exception as e:
                         sys.stderr.write('%s bills: %s\n' % (now_iso(), str(e)[:200]))
                     try:
-                        _trips_to_digest(n)        # trip changes, cancellations, check-in opening (each once)
+                        if _bg('trips'):
+                            _trips_to_digest(n)        # trip changes, cancellations, check-in opening (each once)
                     except Exception as e:
                         sys.stderr.write('%s trips line: %s\n' % (now_iso(), str(e)[:200]))
                     try:
-                        PEOPLE.add_to_digest(DIGESTS_DIR, n, _keep_due)   # at most one keep-in-touch line, private world
+                        if _bg('people'):
+                            PEOPLE.add_to_digest(DIGESTS_DIR, n, _keep_due)   # at most one keep-in-touch line, private world
                     except Exception as e:
                         sys.stderr.write('%s keep in touch: %s\n' % (now_iso(), str(e)[:200]))
                     briefing = False
                     try:
-                        briefing = AWAY.add_to_digest(DIGESTS_DIR, n, lambda: load_json(STATE_FILE, {}))   # "Sorted itself out"
+                        if _bg('back_from_away'):
+                            briefing = AWAY.add_to_digest(DIGESTS_DIR, n, lambda: load_json(STATE_FILE, {}))   # "Sorted itself out"
                     except Exception as e:
                         sys.stderr.write('%s away briefing: %s\n' % (now_iso(), str(e)[:200]))
                     payload = None if briefing else digest_payload(n)   # calm: no push for the briefing itself
@@ -3490,10 +3581,15 @@ def do_action(action, p):
             return DOCS.action(action, p)
         except DocumentsBad as e:
             raise Bad(str(e))
-    if action in ('schedule_set', 'sweep_request', 'sweep_cancel'):
+    if action in ('schedule_set', 'sweep_request', 'sweep_cancel', 'sweep_later_cancel'):
         try:
             return SCHED.action(action, p, p.get('_login', ''))
         except (ScheduleBad, ValueError) as e:
+            raise Bad(str(e))
+    if action == 'sweep_offer':
+        try:
+            return OFFER.action(p, p.get('_login', ''))
+        except (_sweep_offer.Bad, ScheduleBad, ValueError) as e:
             raise Bad(str(e))
     if action in PROJECT_MAIL_ACTIONS:
         return project_mail_action(action, p)
@@ -3507,6 +3603,8 @@ def do_action(action, p):
         return block_action(action, p)
     if action in PLAN_ACTIONS:
         return plan_action(action, p)
+    if action in FEATURE_ACTIONS:
+        return feature_action(action, p)
     if action.startswith('project_'):
         try:
             return PROJ.action(action, p)
@@ -4021,6 +4119,7 @@ KB = Knowledge(BASE)      # knowledge/entries/*.md – read by the digest and co
 from kb_harvest import Harvest, Bad as HarvestBad  # noqa: E402
 HARVEST = Harvest(BASE, STATE_DIR, KB, log=sys.stderr)   # suggestions from mail – merged by the scheduler's clock
 RUNNER.harvest = HARVEST
+# RUNNER.features is set right after FEAT exists (below): skipped runs, prompt notes and denied paths for switched-off features
 from briefings import Briefings, Bad as BriefingsBad  # noqa: E402
 from privacy import Privacy, Bad as PrivacyBad  # noqa: E402
 PRIV = Privacy(STATE_DIR)    # private contacts (state/privacy.json) – read here and by the exporters, never by Claude runs
@@ -4202,6 +4301,9 @@ def _renewals_loop():
     """Every 12 hours (or when asked): renewal and expiry mails → suggestions; a known subscription's sender is left out."""
     time.sleep(150)
     while True:
+        if not _bg('renewals'):                  # switched off in What Axella handles: idle, nothing done
+            time.sleep(60)
+            continue
         try:
             known = {dom for s in RECUR.load().get('subs', {}).values() for dom in s.get('domains') or []}
             RENEW.suggest(_renewal_mails(), known)
@@ -4325,6 +4427,259 @@ def block_action(action, p):
             raise Bad(str(e))
         raise
     raise Bad('unknown action')
+
+
+import features as _features  # noqa: E402  (What Axella handles: Features on/off and the guided setup)
+FEAT = _features.Features(STATE_DIR, BASE)
+RUNNER.features = FEAT
+FEATURE_ACTIONS = ('feature_set', 'card_set', 'feature_data_delete', 'feature_data_restore', 'setup_save', 'setup_about', 'review_set', 'setup_card',
+                   'setup_sources_save')
+
+
+def _bg(fid):
+    """Background work for a feature runs only while the owner has it on (a broken features file = on)."""
+    try:
+        return FEAT.owner_on(fid)
+    except Exception:
+        return True
+
+
+def _when_on(fid, fn, *args, **kw):
+    """Start a module's own endless loop once its feature is on (it keeps running until the next restart)."""
+    def go():
+        while not _bg(fid):
+            time.sleep(60)
+        fn(*args, **kw)
+    return go
+
+
+def _is_owner(login):
+    return login in owner_logins()
+
+
+def feature_action(action, p):
+    """Settings → What Axella handles and the guided setup. Per person: the owner's switches are the installation's;
+    anyone else only narrows them for themselves."""
+    login = p.get('_login') or ''
+    owner = _is_owner(login)
+    try:
+        if action == 'feature_set':
+            r = FEAT.set(str(p.get('id') or ''), bool(p.get('on')), login, owner, bool(p.get('confirm')))
+        elif action == 'card_set':
+            r = FEAT.set_card(str(p.get('card') or ''), bool(p.get('on')), login, owner,
+                              p.get('features') if isinstance(p.get('features'), list) else None, bool(p.get('confirm')))
+            if owner and r.get('changed') and p.get('on') and p.get('set_up') is False:
+                FEAT.mark_set_up(str(p.get('card')), False)       # chosen, setup skipped: "Not set up yet"
+        elif action == 'setup_card':                              # a card's mini-setup finished (or skipped)
+            if not owner:
+                raise Bad('Only the owner sets this up')
+            FEAT.mark_set_up(str(p.get('card') or ''), not p.get('skipped'))
+            r = 'saved'
+        elif action == 'feature_data_delete':
+            r = FEAT.delete_data(str(p.get('card') or ''))
+            p['_backup'] = r['backup']
+        elif action == 'feature_data_restore':
+            r = FEAT.restore_data(str(p.get('backup') or p.get('id') or ''))
+        elif action == 'setup_save':
+            r = FEAT.setup_save(login, p)
+        elif action == 'review_set':
+            FEAT.review_set(login, str(p.get('what') or ''))
+            r = 'saved'
+        elif action == 'setup_about':
+            r = setup_about(p)
+        elif action == 'setup_sources_save':
+            r = setup_sources_save(p)
+        else:
+            raise Bad('unknown action')
+    except _features.Bad as e:
+        raise Bad(str(e))
+    return r
+
+
+def features_view(login):
+    owner = _is_owner(login)
+    use = None
+    try:
+        since = (datetime.datetime.now().astimezone() - datetime.timedelta(days=30)).isoformat(timespec='seconds')
+        use = _features.Features.claude_use(RUNNER._load_runs()['runs'], since)
+    except Exception:
+        pass
+    v = FEAT.view(login, owner, use)
+    ab = load_json(ABOUT_FILE, {})
+    cfg = config()
+    v['about'] = {'name': (cfg.get('owner') or {}).get('name') or '', 'language': cfg.get('language') or 'en',
+                  'work_hours': _work_hours(), 'mode': (ab or {}).get('mode') or None} if owner else None
+    try:
+        v['about']['digest_time'] = next((s['time'] for s in RUNNER.load()['digests'] if s['task'] == 'digest-morning'), '07:30') if owner else None
+    except Exception:
+        pass
+    return v
+
+
+def setup_about(p):
+    """About you: name, language, work hours, morning digest time, how work and private look. Owner only. Writes the
+    existing settings (actions-config.json and the schedule) – nothing is read or sent."""
+    ab = load_json(ABOUT_FILE, {})
+    ab = ab if isinstance(ab, dict) else {}
+    upd = {}
+    if 'name' in p:
+        n = re.sub(r'[\x00-\x1f\x7f<>]', ' ', str(p.get('name') or '')).strip()[:60]
+        if not n:
+            raise Bad('what should Axella call you?')
+        upd['name'] = n
+    if 'language' in p:
+        if p['language'] not in ('en', 'da'):
+            raise Bad('English or Danish')
+        upd['language'] = p['language']
+    if 'work_hours' in p:
+        w = p['work_hours'] or {}
+        try:
+            days = sorted({int(x) for x in w.get('days', []) if 0 <= int(x) <= 6})
+            for k in ('from', 'to'):
+                hh, mm = str(w.get(k)).split(':')
+                if len(str(w.get(k))) != 5 or not (0 <= int(hh) < 24 and 0 <= int(mm) < 60):
+                    raise ValueError(k)
+        except (ValueError, TypeError, AttributeError):
+            raise Bad('work hours are days and HH:MM–HH:MM')
+        if not days or w['from'] >= w['to']:
+            raise Bad('work hours need at least one day and a start before the end')
+        upd['work_hours'] = {'days': days, 'from': w['from'], 'to': w['to']}
+    if 'mode' in p:
+        if p['mode'] not in ('separate', 'mixed', 'private'):
+            raise Bad('separate, mixed or private')
+        ab['mode'] = p['mode']
+    if p.get('digest_time'):
+        t = str(p['digest_time'])
+        if not re.match(r'^([01]\d|2[0-3]):[0-5]\d$', t):
+            raise Bad('the digest time is HH:MM')
+
+    def change(c):
+        if 'name' in upd:
+            o = dict(c.get('owner') or {})
+            first_old = o.get('first_name') or ''
+            o['name'] = upd['name']
+            o['first_name'] = upd['name'].split(' ')[0]
+            if not o.get('sign_off') or o.get('sign_off') == 'br ' + first_old:
+                o['sign_off'] = 'br ' + o['first_name']
+            c['owner'] = o
+        for k in ('language', 'work_hours'):
+            if k in upd:
+                c[k] = upd[k]
+    if upd:
+        _config_update(change)
+    with open(ABOUT_FILE + '.tmp', 'w', encoding='utf-8') as f:
+        json.dump(ab, f, ensure_ascii=False, indent=1)
+    os.replace(ABOUT_FILE + '.tmp', ABOUT_FILE)
+    if p.get('digest_time') or ab.get('mode') == 'private':
+        try:
+            d = RUNNER.load()
+            slots = []
+            for sl in d['digests']:
+                sl = dict(sl)
+                if sl['task'] == 'digest-morning' and p.get('digest_time'):
+                    sl['time'] = str(p['digest_time'])[:5]
+                if ab.get('mode') == 'private':
+                    sl['worlds'] = ['private']
+                slots.append(sl)
+            RUNNER.action('scheduler_set', {'digests': slots})
+        except RunnerBad as e:
+            raise Bad(str(e))
+    return dict(upd, mode=ab.get('mode'))
+
+
+def setup_sources_view():
+    """The setup's Messages and Calendar steps: the mail accounts and calendars on this Mac, with what Axella reads now.
+    Names only – no message is read."""
+    cfg = config()
+    accs = cfg.get('accounts') or {}
+    found = []
+    try:
+        for line in osa(mailsearch.ACCOUNTS_SCRIPT, timeout=30).splitlines():
+            n = line.partition('\t')[2].strip()
+            if n and n not in found:
+                found.append(n)
+    except Exception:
+        pass
+    names = found + [n for n in accs if n not in found]
+    accounts = [{'name': n, 'read': n in accs, 'kind': (accs.get(n) or {}).get('kind') or 'private', 'found': n in found,
+                 'label': (accs.get(n) or {}).get('label') or n} for n in names]
+    cals = {(c if isinstance(c, str) else c.get('name')): ('private' if isinstance(c, str) else c.get('kind') or 'private')
+            for c in cfg.get('calendars') or [] if (c if isinstance(c, str) else c.get('name'))}
+    on_mac = []
+    try:
+        import calendar_view
+        on_mac = [c.get('title') or c.get('name') for c in calendar_view.calendars(RUNNER.mcp_file()) if (c.get('title') or c.get('name'))]
+    except Exception:
+        pass
+    calendars = [{'name': n, 'kind': cals.get(n, 'ignore'), 'found': n in on_mac} for n in on_mac + [n for n in cals if n not in on_mac]]
+    ch = cfg.get('channels') or {}
+    ab = load_json(ABOUT_FILE, {}) or {}
+    return {'accounts': accounts, 'calendars': calendars,
+            'channels': {k: ch.get(k, True) for k in ('imessage', 'whatsapp', 'signal')},
+            'whatsapp_connected': os.path.exists(os.path.join(STATE_DIR, 'whatsapp.json')),
+            'signal_linked': bool(load_json(os.path.join(STATE_DIR, 'signal.json'), {}).get('linked')),
+            'lookback': ab.get('lookback') or 14}
+
+
+def setup_sources_save(p):
+    """Which accounts are read and as work or private, calendars as work / private / ignore, the message channels and
+    the first digest's look-back. Owner only; written to actions-config.json (a copy of the old one kept first)."""
+    accs = p.get('accounts') if isinstance(p.get('accounts'), list) else None
+    cals = p.get('calendars') if isinstance(p.get('calendars'), list) else None
+    chans = p.get('channels') if isinstance(p.get('channels'), dict) else None
+
+    def change(c):
+        if accs is not None:
+            cur = dict(c.get('accounts') or {})
+            for a in accs[:30]:
+                n = str((a or {}).get('name') or '')[:120]
+                if not n:
+                    continue
+                kind = a.get('kind') if a.get('kind') in ('work', 'private') else 'private'
+                if not a.get('read'):
+                    cur.pop(n, None)
+                else:
+                    e = dict(cur.get(n) or {'label': n})
+                    e['kind'] = kind
+                    if kind == 'private':
+                        e.pop('workplace', None)
+                    cur[n] = e
+            c['accounts'] = cur
+        if cals is not None:
+            old = {}
+            for x in c.get('calendars') or []:
+                x = {'name': x} if isinstance(x, str) else dict(x)
+                if x.get('name'):
+                    old[x['name']] = x
+            for x in cals[:60]:
+                n = str((x or {}).get('name') or '')[:120]
+                k = (x or {}).get('kind')
+                if not n or k not in ('work', 'private', 'ignore'):
+                    continue
+                if k == 'ignore':
+                    old.pop(n, None)
+                else:
+                    e = old.get(n) or {'name': n}
+                    e['kind'] = k
+                    if k == 'private':
+                        e.pop('workplace', None)
+                    old[n] = e
+            c['calendars'] = list(old.values())
+        if chans is not None:
+            c['channels'] = {k: bool(chans.get(k, True)) for k in ('imessage', 'whatsapp', 'signal')}
+    _config_update(change)
+    if p.get('lookback') in (7, 14, 30):
+        ab = load_json(ABOUT_FILE, {}) or {}
+        ab['lookback'] = p['lookback']
+        with open(ABOUT_FILE + '.tmp', 'w', encoding='utf-8') as f:
+            json.dump(ab, f, indent=1)
+        os.replace(ABOUT_FILE + '.tmp', ABOUT_FILE)
+    global _MAIL_ACC
+    try:
+        _MAIL_ACC.update(at=0, map={})                  # mail accounts are read again at once
+    except Exception:
+        pass
+    return setup_sources_view()
 
 
 import planner as _planner  # noqa: E402  (Targets and Now · Next · Later – rules only, owner only)
@@ -4988,6 +5343,9 @@ def _recurring_loop():
     app stores' receipts."""
     time.sleep(90)
     while True:
+        if not _bg('subscriptions'):                  # switched off in What Axella handles: idle, nothing done
+            time.sleep(60)
+            continue
         try:
             RECUR.refresh(DOCS.load().get('documents') or {}, _recurring_notices(), receipts=_store_receipts())
         except Exception as e:
@@ -5105,6 +5463,9 @@ def _project_scan_loop():
     candidates wait in To sort – no digest line, no push."""
     time.sleep(300)
     while True:
+        if not _bg('project_mail'):                  # switched off in What Axella handles: idle, nothing done
+            time.sleep(60)
+            continue
         try:
             now = datetime.datetime.now()
             if now.hour == 3 and _PSCAN_NIGHT.get('day') != now.date():
@@ -5272,6 +5633,9 @@ def project_read_ingest():
 
 def _project_read_loop():
     while True:
+        if not _bg('project_mail'):                  # switched off in What Axella handles: idle, nothing done
+            time.sleep(60)
+            continue
         try:
             project_read_ingest()
         except Exception as e:
@@ -5329,6 +5693,9 @@ def trip_read_ingest():
 
 def _trip_read_loop():
     while True:
+        if not _bg('trips'):                  # switched off in What Axella handles: idle, nothing done
+            time.sleep(60)
+            continue
         try:
             trip_read_ingest()
         except Exception as e:
@@ -5510,6 +5877,9 @@ def _trip_watch_loop():
     time.sleep(120)
     last = 0
     while True:
+        if not _bg('trips'):                  # switched off in What Axella handles: idle, nothing done
+            time.sleep(60)
+            continue
         try:
             if time.time() - last > 1800:
                 last = time.time()
@@ -5606,6 +5976,9 @@ def _birthday_loop():
     """Every 15 min: state/birthdays-today.json for the morning digest (first names and age only)."""
     time.sleep(30)
     while True:
+        if not _bg('birthdays'):                  # switched off in What Axella handles: idle, nothing done
+            time.sleep(60)
+            continue
         try:
             BDAY.write_today(BOOK.overview()['people'])
         except Exception as e:
@@ -5672,7 +6045,7 @@ SLOW_ACTIONS = {'draft', 'draft_new', 'reply_send', 'mail_send', 'invite_respond
                 'contact_add', 'contact_update', 'contact_delete', 'contact_restore',
                 'cal_add', 'cal_update', 'cal_delete', 'cal_restore', 'trip_cal_add', 'trip_cal_sync', 'trip_cal_remove'}
 # changing contacts and the calendar: the owner's own login only – anyone else on the access list reads
-OWNER_ONLY = set(PLAN_ACTIONS) | {'note_save', 'note_keep', 'note_delete', 'note_restore', 'note_todo', 'teach_not_important', 'rule_remove', 'rule_restore', 'suggest_accept', 'suggest_later', 'suggest_never',
+OWNER_ONLY = set(PLAN_ACTIONS) | {'sweep_offer', 'sweep_later_cancel', 'feature_data_delete', 'feature_data_restore', 'setup_about', 'setup_card', 'setup_sources_save', 'note_save', 'note_keep', 'note_delete', 'note_restore', 'note_todo', 'teach_not_important', 'rule_remove', 'rule_restore', 'suggest_accept', 'suggest_later', 'suggest_never',
               'calm_setup_step', 'calm_setup_dismiss', 'backup_export', 'backup_auto', 'backup_run', 'away_archive', 'away_undo', 'away_catchup', 'block_settings', 'block_never', 'block_not_now', 'block_hold', 'renewal_add', 'renewal_not', 'renewal_update', 'renewal_snooze', 'renewal_let_renew', 'renewal_renewed', 'renewal_past',
               'renewal_delete', 'renewal_scan', 'renewal_todo', 'contact_add', 'contact_update', 'contact_delete', 'contact_restore', 'cal_add', 'cal_update', 'cal_delete', 'cal_restore',
               'project_doc_from_mail', 'project_mail_scan', 'project_mail_add', 'project_mail_not', 'project_mail_undo_not', 'project_mail_remove',
@@ -5816,6 +6189,9 @@ def _wrap_facts(worlds):
 
 
 RUNNER.wrap_facts = _wrap_facts
+import sweep_offer as _sweep_offer  # noqa: E402
+OFFER = _sweep_offer.SweepOffer(STATE_DIR, RUNNER, SCHED, _work_hours)
+RUNNER.sweep_scope = OFFER.scope       # an "In an hour" sweep gets its scope when it runs
 
 import people as _people  # noqa: E402  (People page and keep in touch – local only, never sent to Claude)
 PEOPLE = _people.People(STATE_DIR)
@@ -5935,7 +6311,7 @@ def bills_view():
     docs = DOCS.load().get('documents') or {}
     tasks = load_json(TASKS_FILE, [])
     open_bills = {t.get('id') for t in tasks if t.get('type') == 'bill'}
-    return {'suggestions': BILLS.suggestions(docs, known=_known_people()[0]), 'looks_paid': BILLS.find_looks_paid(docs, tasks),
+    return {'suggestions': BILLS.suggestions(docs, known=_known_people()[0], tasks=tasks), 'looks_paid': BILLS.find_looks_paid(docs, tasks),
             'refs': BILLS.refs(open_bills)}                     # each bill To do's payment details (not in tasks.json)
 
 
@@ -5990,6 +6366,9 @@ def _bills_loop():
     except Exception as e:
         sys.stderr.write('bills: %s\n' % str(e)[:200])
     while True:
+        if not _bg('bills'):                  # switched off in What Axella handles: idle, nothing done
+            time.sleep(60)
+            continue
         try:
             docs = DOCS.load().get('documents') or {}
             BILLS.refresh(docs, read_text=_bill_text, skip=_bill_skip)
@@ -6183,11 +6562,34 @@ class Handler(BaseHTTPRequestHandler):
     def _action(self):
         return self.path.split('?')[0].rstrip('/').split('/')[-1]
 
+    def _feature_off(self, login, action, p, get=False):
+        """403 when the feature behind this action or page is off – for everyone (owner off) or for this person."""
+        try:
+            fid = _features.feature_of_get(action, p) if get else _features.feature_of_action(action, p)
+            if fid and not FEAT.is_on(fid, login, _is_owner(login)):
+                log(login, action, {}, 'rejected: feature off')
+                self._send(403, {'ok': False, 'feature_off': fid,
+                                 'error': '%s is off – switch it on in Settings → What Axella handles' % FEAT.off_label(fid)})
+                return True                    # answered – the caller stops here
+        except Exception as e:                 # the gate never takes the service down; a broken file = everything on
+            sys.stderr.write('%s feature gate: %s\n' % (now_iso(), str(e)[:200]))
+        return None
+
     def do_GET(self):
         login = self._login()
         if not login:
             return self._send(403, {'ok': False, 'error': 'not allowed'})
         a = self._action()
+        from urllib.parse import parse_qs as _pq, urlparse as _up
+        off = self._feature_off(login, a, {k: v[0] for k, v in _pq(_up(self.path).query).items()}, get=True)
+        if off:
+            return off
+        if a == 'features':                               # What Axella handles: the cards and switches for this person
+            return self._send(200, {'ok': True, **features_view(login)})
+        if a == 'setup_sources':                          # the setup's accounts and calendars: owner only, names only
+            if not _is_owner(login):
+                return self._send(403, {'ok': False, 'error': 'Only the owner can see this'})
+            return self._send(200, {'ok': True, **setup_sources_view()})
         if a == 'health':
             return self._send(200, {'ok': True, 'login': login})
         if a == 'state':
@@ -6592,6 +6994,15 @@ class Handler(BaseHTTPRequestHandler):
         if a == 'search':
             from urllib.parse import parse_qs, urlparse
             hits = STORE.search(parse_qs(urlparse(self.path).query).get('q', [''])[0])
+            own = _is_owner(login)
+            if not FEAT.is_on('filing', login, own):           # What Axella handles: no filing suggestions …
+                hits = [h for h in hits if not (isinstance(h, dict) and h.get('section') == 'file')]
+            if not FEAT.is_on('call_agent', login, own):       # … no calls
+                hits = [h for h in hits if not (isinstance(h, dict) and h.get('channel') == 'call')]
+            if not FEAT.is_on('projects', login, own):         # … no project tags
+                for h in hits:
+                    if isinstance(h, dict):
+                        h.pop('project', None)
             for h in hits:
                 f = SAFETY.flag_of(h) if isinstance(h, dict) else None
                 if f:
@@ -6619,6 +7030,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {'ok': True, **RUNNER.read_log(q.get('id', [''])[0], q.get('offset', ['0'])[0])})
             except (RunnerBad, ValueError) as e:
                 return self._send(400, {'ok': False, 'error': str(e)})
+        if a == 'sweep_offer':                           # the quiet row on Today – the owner's mail and subscription
+            if login not in owner_logins():
+                return self._send(403, {'ok': False, 'error': 'Only the owner'})
+            try:
+                return self._send(200, {'ok': True, **OFFER.view()})
+            except Exception as e:
+                sys.stderr.write('%s sweep offer: %s\n' % (now_iso(), str(e)[:200]))
+                return self._send(200, {'ok': True, 'show': False, 'why': 'error'})
         if a == 'schedule':
             try:
                 nxt = RUNNER.next_digest()                # the line at the top of Today: "next digest 15:30, in 4 h"
@@ -6626,7 +7045,7 @@ class Handler(BaseHTTPRequestHandler):
                 sys.stderr.write('%s next digest: %s\n' % (now_iso(), str(e)[:200]))
                 nxt = None
             return self._send(200, {'ok': True, 'schedule': SCHED.load(), 'status': SCHED.status(),
-                                    'sweep': SCHED.sweep(), 'wait': SCHED.wait_text(general=True), 'next': nxt})
+                                    'sweep': SCHED.sweep(), 'later': SCHED.later(), 'wait': SCHED.wait_text(general=True), 'next': nxt})
         if a == 'attachment':
             from urllib.parse import parse_qs, urlparse, quote
             q = parse_qs(urlparse(self.path).query)
@@ -6879,6 +7298,9 @@ class Handler(BaseHTTPRequestHandler):
         if not login or self.headers.get('X-Axella') != '1':
             log(login or '-', self._action(), {}, 'rejected: not allowed (no Tailscale login or missing header)')
             return self._send(403, {'ok': False, 'error': 'not allowed'})
+        off = self._feature_off(login, self._action(), {})           # raw uploads (recordings, files) too
+        if off:
+            return off
         if self._action() == 'outbox_upload':
             from urllib.parse import parse_qs, urlparse
             q = parse_qs(urlparse(self.path).query)
@@ -6967,6 +7389,9 @@ class Handler(BaseHTTPRequestHandler):
         if action in OWNER_ONLY and login not in owner_logins():
             log(login, action, {}, 'rejected: owner only')
             return self._send(403, {'ok': False, 'error': 'Only the owner can do this from here'})
+        off = self._feature_off(login, action, payload)
+        if off:
+            return off
         if action == 'meeting_service_connect':
             payload['_host'] = self.headers.get('Host')
         if action in ('reply_send', 'mail_send', 'invite_respond', 'cal_invite_send', 'cal_invite_update', 'cal_invite_cancel'):
@@ -7156,24 +7581,29 @@ class TailscaleOnlyServer(ThreadingHTTPServer):
 
 
 if __name__ == '__main__':
+    try:
+        FEAT.load()                                # first start: decide new install vs in use before any thread writes
+    except Exception:
+        pass
     threading.Thread(target=push_watcher, daemon=True).start()
     import digest_guard
     threading.Thread(target=digest_guard.run, daemon=True, args=(
         DIGESTS_DIR, os.path.join(STATE_DIR, 'digest-guard.json'), push_send,
-        lambda: bool(load_json(PUSH_SUBS_FILE, [])) and SCHED.status()['digests'])).start()   # no alert on paused days
+        lambda: bool(load_json(PUSH_SUBS_FILE, [])), RUNNER.due_digests)).start()   # only the slots that really run that day
     import whatsapp_export
     threading.Thread(target=whatsapp_export.run, daemon=True).start()   # state/whatsapp.json every 2 min
     import signal_export
     threading.Thread(target=signal_export.run, daemon=True).start()     # state/signal.json every 2 min (signal-cli)
     import private_local
     threading.Thread(target=private_local.run, daemon=True).start()     # Private card for Mail/iMessage (no text read)
-    threading.Thread(target=DOCS.run, daemon=True, kwargs={   # receipts/invoices register + folder watch
+    threading.Thread(target=lambda **kw: _when_on('receipts', DOCS.run, **kw)(), daemon=True, kwargs={   # receipts/invoices register + folder watch
         'osa': osa, 'folders': [tuple(x) for x in config().get('document_folders', [])]}).start()
     def _auto_forward_loop():
         import time
         while True:
             try:
-                FWD.auto_once(sys.stderr, audit=log_auto)
+                if _bg('receipts'):                # Receipts off: nothing is forwarded on its own
+                    FWD.auto_once(sys.stderr, audit=log_auto)
             except Exception as e:
                 sys.stderr.write('auto-forward: %s\n' % str(e)[:200])
             try:
@@ -7213,17 +7643,17 @@ if __name__ == '__main__':
     threading.Thread(target=_trip_read_loop, daemon=True).start()
     threading.Thread(target=_project_read_loop, daemon=True).start()   # Claude's project readings → suggestion cards
     threading.Thread(target=_project_scan_loop, daemon=True).start()   # Projects → Scan mail: the nightly re-scan     # Claude's trip readings → trips    # state/birthdays-today.json for the morning digest
-    threading.Thread(target=SUBS.run, daemon=True, args=([tuple(x) for x in config().get('newsletter_folders', [])],)).start()
+    threading.Thread(target=_when_on('filing', SUBS.run, [tuple(x) for x in config().get('newsletter_folders', [])]), daemon=True).start()
     import housekeeping
     threading.Thread(target=housekeeping.run, daemon=True, args=(DIGESTS_DIR, STATE_DIR)).start()
     from voice_sync import VoiceSync
     OOO = OutOfOffice(STATE_DIR, push_send, config=config)
-    threading.Thread(target=OOO.run, daemon=True).start()          # out-of-office reminders
+    threading.Thread(target=_when_on('back_from_away', OOO.run), daemon=True).start()          # out-of-office reminders
     REM.push = push_send
-    threading.Thread(target=CLEAN.run, daemon=True).start()        # mail cleanup: weekly scan + background moves
+    threading.Thread(target=_when_on('mail_tidy', CLEAN.run), daemon=True).start()        # mail cleanup: weekly scan + background moves
     threading.Thread(target=REM.run, daemon=True).start()          # recurring reminders → tasks (state/reminders.json)
     VOICE = VoiceSync(BASE, STATE_DIR, config, osa, push_send, away=OOO.voice_greetings, privacy=PRIV)
-    threading.Thread(target=VOICE.run, daemon=True).start()        # call agent on Vercel → calls/ + push
+    threading.Thread(target=_when_on('call_agent', VOICE.run), daemon=True).start()        # call agent on Vercel → calls/ + push
     threading.Thread(target=private_watcher, daemon=True).start()   # push for a new private message (who/where only)
     threading.Thread(target=job_worker, daemon=True).start()        # slow dashboard actions (Mail/Calendar)
     threading.Thread(target=RUNNER.doctor, daemon=True).start()     # state/doctor.json: claude CLI, MCP servers

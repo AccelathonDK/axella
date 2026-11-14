@@ -13,6 +13,7 @@ spec = importlib.util.spec_from_file_location('axa', os.path.join(HERE, 'axella-
 A = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(A)
 import invites  # noqa: E402
+import calendar_answer  # noqa: E402
 
 fails = 0
 
@@ -43,6 +44,8 @@ calendar_view._cache[('2026-11-05', '2026-11-06')] = (9e18, {'events': []})
 
 def osa(script, *args, timeout=60, tries=1):
     calls.append((script, args))
+    if script is calendar_answer.SCRIPT:          # these invitations are not in Calendar: the mail reply (test_invite_calendar.py has the rest)
+        return 'not_found'
     if script is A.SEND_NEW_SCRIPT:
         calls.append(('ics', open(args[5]).read()))
         return 'sent'
@@ -85,6 +88,8 @@ ok('invite_respond' in A.SLOW_ACTIONS and 'invite_respond' in A.SENDS, 'runs in 
 # Mail refusing before sending: nothing went out, the retry is not blocked
 A.SENT_FILE = os.path.join(d, 'sent2.json')
 def osa_fail(script, *args, timeout=60, tries=1):
+    if script is calendar_answer.SCRIPT:
+        return 'not_found'
     raise RuntimeError('execution error: Mail got an error')
 A.osa = osa_fail
 try:

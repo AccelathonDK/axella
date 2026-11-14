@@ -18,6 +18,7 @@ import { Banners, useBySection } from '@/components/Today'
 import { OfflineScreen } from '@/components/Offline'
 import { PauseBanner } from '@/components/Settings'
 import { PlanToday } from '@/components/Plan'
+import { HandlesToday, On } from '@/components/Handles'
 import { useApp } from '@/lib/app'
 import type { Call, Item, Task } from '@/lib/types'
 import { cn, isoDate } from '@/lib/utils'
@@ -25,6 +26,7 @@ import { WrapCard } from '@/components/Wrap'
 import { SuggestionCard } from '@/components/Learn'
 import { CalmSetupNudge } from '@/components/CalmSetup'
 import { LaterLine } from '@/components/Later'
+import { SweepOfferRow } from '@/components/SweepOffer'
 
 /* Today = Now + Briefing (the split agreed on the design canvas):
    - Now: one ranked queue of everything that needs the owner – urgent and overdue first, then today's replies, calls,
@@ -185,10 +187,10 @@ export function BriefingSummary({ full = false }: { full?: boolean }) {
       </div>)}</div>
     </Card>}
 
-    <ScheduledCard />
-    <CommitmentsCard />
-    <PendingInvites limit={3} />
-    <MeetingsCard />
+    <On f="send_later"><ScheduledCard /></On>
+    <On f="to_answer"><CommitmentsCard /></On>
+    <On f="invites"><PendingInvites limit={3} /></On>
+    <On f="meeting_prep"><MeetingsCard /></On>
     <PrivateCard />
     <BriefsCard since={(cur.data as { generated?: string }).generated} />
 
@@ -255,20 +257,22 @@ export function NowView() {
       <h1 className="text-[28px] leading-tight font-semibold tracking-[-0.02em]">{count ? `${count} thing${count > 1 ? 's' : ''} need${count > 1 ? '' : 's'} you` : 'Nothing needs you'}</h1>
       <span className="text-ink-3 font-mono text-[13px] uppercase">{d.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' })} · {hm(d.toISOString())}<NextDigest /></span>
     </div>
+    <SweepOfferRow />
     <Banners />
     <PauseBanner />
     <WelcomeCard />
     <CalmSetupNudge where="today" />
     <WrapCard />
     {!cur?.data.wrap?.headline && <SuggestionCard />}
-    <TravelCard />
-    <PlanToday />
-    <SprintCard />
-    <RenewalsCard />
+    <HandlesToday />
+    <On f="trips"><TravelCard /></On>
+    <On f="plan"><PlanToday /></On>
+    <On f="reply_sprint"><SprintCard /></On>
+    <On f="renewals"><RenewalsCard /></On>
     <div className="grid grid-cols-1 items-start gap-5 min-[1100px]:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)]">
       <NowQueue />
       <div className="max-[1099px]:hidden"><BriefingSummary /></div>
-      <div className="space-y-3 min-[1100px]:hidden"><ScheduledCard /><CommitmentsCard /><PendingInvites limit={3} /><MeetingsCard /><PrivateCard /><BriefsCard since={cur && (cur.data as { generated?: string }).generated} /></div>
+      <div className="space-y-3 min-[1100px]:hidden"><On f="send_later"><ScheduledCard /></On><On f="to_answer"><CommitmentsCard /></On><On f="invites"><PendingInvites limit={3} /></On><On f="meeting_prep"><MeetingsCard /></On><PrivateCard /><BriefsCard since={cur && (cur.data as { generated?: string }).generated} /></div>
     </div>
     <LaterLine place="main" />
   </div>

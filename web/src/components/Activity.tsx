@@ -38,7 +38,7 @@ export function ActivityView() {
     return g
   }, [d])
   async function restore(e: Entry) {
-    const action = e.action === 'contact_delete' ? 'contact_restore' : e.action === 'meeting_delete' ? 'meeting_restore' : e.action === 'trip_remove' ? 'trip_restore' : e.action.startsWith('trip_cal_') ? 'cal_restore' : e.action.startsWith('trip_') ? 'trip_undo' : 'cal_restore'
+    const action = e.action === 'feature_data_delete' ? 'feature_data_restore' : e.action === 'contact_delete' ? 'contact_restore' : e.action === 'meeting_delete' ? 'meeting_restore' : e.action === 'trip_remove' ? 'trip_restore' : e.action.startsWith('trip_cal_') ? 'cal_restore' : e.action.startsWith('trip_') ? 'trip_undo' : 'cal_restore'
     setBusy(e.backup!)
     try { await ax.act(action, { backup: e.backup, title: e.title || '' }, []); toast.success((e.title || 'It') + ' is back'); setN(x => x + 1) }
     catch (x: any) { toast.error('Not restored: ' + x.message) } finally { setBusy(null) }

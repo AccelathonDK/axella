@@ -233,5 +233,35 @@ ok(oct(os.stat(os.path.join(st3, 'bills.json')).st_mode & 0o777) == '0o600', 'bi
 import scheduler  # noqa: E402
 ok('state/bills.json' in scheduler.SECRETS, 'bills.json is on the SECRETS list (no Claude run reads it)')
 
+# the same bill twice: a pro forma and its invoice (or a copy in a reply) – one To do, no second card
+D4 = {
+    'pf': {'message_id': 'pf', 'vendor': 'Northwind Freight', 'vendor_key': 'northwindfreight', 'kind': 'invoice', 'amount': 1500.5, 'currency': 'USD',
+           'due': '2027-03-04', 'date': '2027-03-04', 'account': 'iCloud', 'attachments': ['Pro forma 12345.pdf']},
+    'inv': {'message_id': 'inv', 'vendor': 'Northwind Freight', 'vendor_key': 'northwindfreight', 'kind': 'invoice', 'amount': 1500.5, 'currency': 'USD',
+            'due': '2027-03-20', 'date': '2027-03-06', 'account': 'iCloud', 'attachments': ['Tax invoice 12345.pdf']},
+    'next': {'message_id': 'next', 'vendor': 'Northwind Freight', 'vendor_key': 'northwindfreight', 'kind': 'invoice', 'amount': 1500.5, 'currency': 'USD',
+             'due': '2027-04-19', 'date': '2027-04-05', 'account': 'iCloud'},
+    'other': {'message_id': 'other', 'vendor': 'Northwind Freight', 'vendor_key': 'northwindfreight', 'kind': 'invoice', 'amount': 1501.5, 'currency': 'USD',
+              'due': '2027-03-20', 'date': '2027-03-06', 'account': 'iCloud'},
+    'rem': {'message_id': 'rem', 'vendor': 'Northwind Freight', 'vendor_key': 'northwindfreight', 'kind': 'reminder', 'amount': 1500.5, 'currency': 'USD',
+            'due': '2027-03-22', 'date': '2027-03-15', 'account': 'iCloud'},
+}
+st4 = os.path.join(tmp, 'st4')
+os.makedirs(st4)
+b4 = B.Bills(st4)
+b4.refresh(D4, TODAY, None)
+tasks4 = [{'id': 't40', 'type': 'bill', 'status': 'open', 'text': 'Pay Northwind Freight 1.500,50 USD',
+           'bill': {'payee': 'Northwind Freight', 'amount': 1500.5, 'currency': 'USD', 'document': 'pf', 'vendor_key': 'northwindfreight'}}]
+b4.set('pf', status='added', task_id='t40')
+ids = sorted(c['id'] for c in b4.suggestions(D4, TODAY, tasks=tasks4))
+ok('inv' not in ids and 'rem' not in ids, 'the invoice after its pro forma (same payee, amount, currency, due 16 days apart) is no second card')
+ok('next' in ids and 'other' in ids, "… but next month's bill for the same amount, and a different amount, are cards")
+ok('inv' in [c['id'] for c in b4.suggestions(D4, TODAY)], 'without the To do list (as before) it would be a card')
+tasks4[0]['status'] = 'done'
+ids = sorted(c['id'] for c in b4.suggestions(D4, TODAY, tasks=tasks4))
+ok('inv' not in ids and 'rem' in ids, 'paid: the copy stays hidden, a reminder shows – worth a look after paying')
+ok(not B.same_bill({'vendor_key': 'x', 'amount': 5.0, 'currency': 'DKK'}, {'vendor_key': 'x', 'amount': 5.0, 'currency': 'DKK'}),
+   'no dates to compare: better a card than a hidden bill')
+
 print('%d failed' % fails if fails else 'all ok')
 sys.exit(1 if fails else 0)
